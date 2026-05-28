@@ -85,6 +85,3 @@ Restart Claude Code to load the server.
 
 `credentials.json` and `token.json` are gitignored and must never be committed. Each machine generates its own `token.json` via `npm run auth`.
 
-## License
-
-Private — ATA Enterprises.
