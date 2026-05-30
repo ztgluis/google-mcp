@@ -32,11 +32,11 @@ This opens your browser for Google sign-in and saves `token.json` locally (never
 
 ### Register with Claude Code
 
-From your Claude Code project directory:
-
 ```bash
-claude mcp add google -s project -- node "$HOME/dev/google-mcp/index.js"
+claude mcp add google -s user -- node "$HOME/dev/google-mcp/index.js"
 ```
+
+Use `-s user` (not `-s project`) so the registration is stored locally in `~/.claude.json`. If your project directory is on a synced drive (e.g., Google Drive), `-s project` would create a `.mcp.json` with a machine-specific absolute path that breaks on other machines.
 
 Restart Claude Code to load the server.
 
