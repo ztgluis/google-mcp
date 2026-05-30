@@ -21,3 +21,21 @@ export async function searchDrive(auth, { query, mimeType, maxResults = 10 }) {
     .map(f => `${f.name}\n  ID: ${f.id}\n  Type: ${f.mimeType}\n  Modified: ${f.modifiedTime}\n  URL: ${f.webViewLink}`)
     .join('\n\n');
 }
+
+export async function trashFile(auth, { fileId, permanent = false }) {
+  const drive = google.drive({ version: 'v3', auth });
+
+  if (permanent) {
+    await drive.files.delete({ fileId, supportsAllDrives: true });
+    return `Permanently deleted file ${fileId}.`;
+  }
+
+  const res = await drive.files.update({
+    fileId,
+    supportsAllDrives: true,
+    requestBody: { trashed: true },
+    fields: 'id,name,trashed',
+  });
+
+  return `Trashed: ${res.data.name} (${res.data.id})`;
+}

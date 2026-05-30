@@ -2,7 +2,7 @@ import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { getAuth } from './google.js';
-import { searchDrive } from './tools/drive.js';
+import { searchDrive, trashFile } from './tools/drive.js';
 import { readDoc, editDoc } from './tools/docs.js';
 import { TOOLS as SHEET_TOOLS } from './tools/sheets.js';
 import { TOOLS as FORMAT_TOOLS } from './tools/sheets-format.js';
@@ -23,6 +23,18 @@ const DRIVE_DOC_TOOLS = [
     name: 'read_doc',
     description: 'Read a Google Doc as plain text / markdown',
     inputSchema: { type: 'object', properties: { fileId: { type: 'string', description: 'Google Doc file ID or URL' } }, required: ['fileId'] },
+  },
+  {
+    name: 'trash_file',
+    description: 'Move a Google Drive file or folder to trash (or permanently delete it). Use search_drive first to find the file ID.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        fileId: { type: 'string', description: 'The ID of the file to trash or delete' },
+        permanent: { type: 'boolean', description: 'If true, permanently delete instead of trashing (default: false)' },
+      },
+      required: ['fileId'],
+    },
   },
   {
     name: 'edit_doc',
@@ -72,6 +84,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
     let result;
     if (name === 'search_drive') result = await searchDrive(auth, args);
+    else if (name === 'trash_file') result = await trashFile(auth, args);
     else if (name === 'read_doc') result = await readDoc(auth, args);
     else if (name === 'edit_doc') result = await editDoc(auth, args);
     else if (HANDLERS[name]) result = await HANDLERS[name](auth, args);
