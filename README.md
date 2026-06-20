@@ -2,7 +2,7 @@
 
 MCP server for Google Drive, Docs, and Sheets — built for Claude Code.
 
-Gives Claude Code direct read/write access to Google Sheets (cell-level edits, formatting, structure), Google Docs (insert, replace, append), and Drive (search).
+Gives Claude Code direct read/write access to Google Drive (file management, sharing, comments), Google Docs (full editing, formatting, tables, lists, hyperlinks), and Google Sheets (cell-level edits, formatting, structure).
 
 ## Setup
 
@@ -40,14 +40,42 @@ Use `-s user` (not `-s project`) so the registration is stored locally in `~/.cl
 
 Restart Claude Code to load the server.
 
-## Tools (29)
+## Tools (52)
 
 ### Drive
 - `search_drive` — search files by name or content
+- `get_file_metadata` — file info (name, type, size, owner, dates, parents)
+- `rename_file` — rename any file or folder
+- `move_file` — move a file to a different folder
+- `copy_file` — copy any file, optionally rename and relocate
+- `create_folder` — create a new folder
+- `trash_file` — move to trash or permanently delete
+- `list_folder` — list contents of a folder
+
+### Comments
+- `add_comment` — add a comment to any Drive file, optionally anchored to quoted text
+- `list_comments` — list comments on a file
+- `resolve_comment` — resolve a comment
 
 ### Docs
-- `read_doc` — read a Google Doc as plain text
-- `edit_doc` — insert, delete, replace, or append text in a Google Doc
+- `create_doc` — create a new Google Doc
+- `read_doc` — read a Google Doc as plain text / markdown
+- `edit_doc` — insert, delete, replace, or append text
+- `format_doc` — bold, italic, underline, font, colors, headings, alignment, hyperlinks
+- `copy_doc` — copy a Google Doc
+- `rename_doc` — rename a Google Doc
+- `export_doc` — export to PDF, DOCX, TXT, HTML, RTF, or EPUB
+- `insert_image` — insert an inline image from a URL
+- `insert_table` — insert a table
+- `modify_table` — insert/delete rows and columns in a table
+- `update_list` — apply or remove bulleted/numbered list formatting
+- `insert_page_break` — insert a page break
+- `create_named_range` — create a named range (bookmark)
+- `delete_named_range` — delete a named range
+- `list_named_ranges` — list all named ranges
+- `list_doc_tabs` — list tabs in a doc
+- `rename_doc_tab` — rename a doc tab
+- `update_header_footer` — create or replace headers/footers
 
 ### Sheets — Data
 - `read_sheet` — read a range
