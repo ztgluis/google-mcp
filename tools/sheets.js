@@ -1,6 +1,6 @@
 import { google } from 'googleapis';
 import { extractId } from '../google.js';
-import { extractSheetName, getSheetId, columnToIndex, colIndexToLetter } from '../utils/range-helpers.js';
+import { extractSheetName, getSheetId, parseRange, columnToIndex, colIndexToLetter } from '../utils/range-helpers.js';
 
 function sheets(auth) { return google.sheets({ version: 'v4', auth }); }
 function drive(auth)  { return google.drive({ version: 'v3', auth }); }
@@ -248,6 +248,128 @@ export async function exportSheet(auth, { spreadsheetId, format, sheetId: gid })
   return `Exported ${bytes.length} bytes as ${format.toUpperCase()}. (Use download_drive_file to save locally.)`;
 }
 
+export async function setDataValidation(auth, { spreadsheetId, range, type, values, strict = true, showCustomUi = true, inputMessage }) {
+  const id = extractId(spreadsheetId);
+  const api = sheets(auth);
+  const { sheetName, range: cleanRange } = extractSheetName(range);
+  const sheetId = await getSheetId(api, id, sheetName);
+  const gridRange = parseRange(cleanRange, sheetId);
+
+  const condition = { type };
+  if (values?.length) {
+    condition.values = values.map(v => ({ userEnteredValue: String(v) }));
+  }
+
+  const dataValidation = { condition, strict, showCustomUi };
+  if (inputMessage) dataValidation.inputMessage = inputMessage;
+
+  await api.spreadsheets.batchUpdate({
+    spreadsheetId: id,
+    requestBody: { requests: [{ repeatCell: { range: gridRange, cell: { dataValidation }, fields: 'dataValidation' } }] },
+  });
+  return `Set data validation (${type}) on ${range}.`;
+}
+
+export async function batchClearSheet(auth, { spreadsheetId, ranges }) {
+  const id = extractId(spreadsheetId);
+  const res = await sheets(auth).spreadsheets.values.batchClear({
+    spreadsheetId: id,
+    requestBody: { ranges },
+  });
+  const cleared = res.data.clearedRanges || ranges;
+  return `Cleared ${cleared.length} range(s): ${cleared.join(', ')}.`;
+}
+
+export async function addChart(auth, { spreadsheetId, sheetName, chartType, title, sourceRange, position }) {
+  const id = extractId(spreadsheetId);
+  const api = sheets(auth);
+  const { sheetName: srcSheet, range: cleanRange } = extractSheetName(sourceRange);
+  const srcSheetId = await getSheetId(api, id, srcSheet || sheetName);
+  const gridRange = parseRange(cleanRange, srcSheetId);
+
+  const anchorSheetId = position?.sheetName
+    ? await getSheetId(api, id, position.sheetName)
+    : srcSheetId;
+
+  const chart = {
+    spec: {
+      title,
+      basicChart: {
+        chartType,
+        legendPosition: 'BOTTOM_LEGEND',
+        domains: [{ domain: { sourceRange: { sources: [{ sheetId: gridRange.sheetId, startRowIndex: gridRange.startRowIndex, endRowIndex: gridRange.endRowIndex, startColumnIndex: gridRange.startColumnIndex, endColumnIndex: gridRange.startColumnIndex + 1 }] } } }],
+        series: [{ series: { sourceRange: { sources: [{ sheetId: gridRange.sheetId, startRowIndex: gridRange.startRowIndex, endRowIndex: gridRange.endRowIndex, startColumnIndex: gridRange.startColumnIndex + 1, endColumnIndex: gridRange.endColumnIndex }] } } }],
+      },
+    },
+    position: {
+      overlayPosition: {
+        anchorCell: {
+          sheetId: anchorSheetId,
+          rowIndex: position?.rowIndex || 0,
+          columnIndex: position?.columnIndex || 0,
+        },
+      },
+    },
+  };
+
+  const res = await api.spreadsheets.batchUpdate({
+    spreadsheetId: id,
+    requestBody: { requests: [{ addChart: { chart } }] },
+  });
+  const chartId = res.data.replies?.[0]?.addChart?.chart?.chartId;
+  return `Added ${chartType} chart "${title}" (chartId=${chartId}).`;
+}
+
+export async function deleteEmbeddedObject(auth, { spreadsheetId, objectId }) {
+  const id = extractId(spreadsheetId);
+  await sheets(auth).spreadsheets.batchUpdate({
+    spreadsheetId: id,
+    requestBody: { requests: [{ deleteEmbeddedObject: { objectId } }] },
+  });
+  return `Deleted embedded object (id=${objectId}).`;
+}
+
+export async function setBasicFilter(auth, { spreadsheetId, range }) {
+  const id = extractId(spreadsheetId);
+  const api = sheets(auth);
+  const { sheetName, range: cleanRange } = extractSheetName(range);
+  const sheetId = await getSheetId(api, id, sheetName);
+  const gridRange = parseRange(cleanRange, sheetId);
+
+  await api.spreadsheets.batchUpdate({
+    spreadsheetId: id,
+    requestBody: { requests: [{ setBasicFilter: { filter: { range: gridRange } } }] },
+  });
+  return `Set basic filter on ${range}.`;
+}
+
+export async function clearBasicFilter(auth, { spreadsheetId, sheetName }) {
+  const id = extractId(spreadsheetId);
+  const api = sheets(auth);
+  const sheetId = await getSheetId(api, id, sheetName);
+
+  await api.spreadsheets.batchUpdate({
+    spreadsheetId: id,
+    requestBody: { requests: [{ clearBasicFilter: { sheetId } }] },
+  });
+  return `Cleared basic filter on "${sheetName || 'first sheet'}".`;
+}
+
+export async function addFilterView(auth, { spreadsheetId, range, title }) {
+  const id = extractId(spreadsheetId);
+  const api = sheets(auth);
+  const { sheetName, range: cleanRange } = extractSheetName(range);
+  const sheetId = await getSheetId(api, id, sheetName);
+  const gridRange = parseRange(cleanRange, sheetId);
+
+  const res = await api.spreadsheets.batchUpdate({
+    spreadsheetId: id,
+    requestBody: { requests: [{ addFilterView: { filter: { title, range: gridRange } } }] },
+  });
+  const fvId = res.data.replies?.[0]?.addFilterView?.filter?.filterViewId;
+  return `Added filter view "${title}" (filterViewId=${fvId}).`;
+}
+
 // ── Tool definitions ──────────────────────────────────────────────────────────
 
 export const TOOLS = [
@@ -263,4 +385,11 @@ export const TOOLS = [
   { name: 'find_replace', fn: findReplace, description: 'Find and replace text in a Google Sheet', inputSchema: { type: 'object', properties: { spreadsheetId: { type: 'string' }, find: { type: 'string' }, replacement: { type: 'string' }, sheetName: { type: 'string', description: 'Limit to one sheet (omit to search all sheets)' }, matchCase: { type: 'boolean' }, matchEntireCell: { type: 'boolean' }, searchByRegex: { type: 'boolean' } }, required: ['spreadsheetId', 'find', 'replacement'] } },
   { name: 'sort_range', fn: sortRange, description: 'Sort a range of cells in a Google Sheet', inputSchema: { type: 'object', properties: { spreadsheetId: { type: 'string' }, range: { type: 'string', description: 'Range to sort, e.g. Sheet1!A2:D100' }, sortSpecs: { type: 'array', items: { type: 'object', properties: { column: { description: 'Column letter (e.g. "A") or 0-based index' }, order: { type: 'string', enum: ['ASC', 'DESC'] } }, required: ['column'] }, description: 'Sort criteria in priority order' } }, required: ['spreadsheetId', 'range', 'sortSpecs'] } },
   { name: 'export_sheet', fn: exportSheet, description: 'Export a Google Sheet to csv, tsv, xlsx, pdf, or html', inputSchema: { type: 'object', properties: { spreadsheetId: { type: 'string' }, format: { type: 'string', enum: ['csv', 'tsv', 'xlsx', 'pdf', 'html'] }, sheetId: { type: 'number', description: 'Numeric sheet ID for CSV/TSV (exports first sheet if omitted)' } }, required: ['spreadsheetId', 'format'] } },
+  { name: 'set_data_validation', fn: setDataValidation, description: 'Set data validation rules on a range (dropdowns, number constraints, custom formulas)', inputSchema: { type: 'object', properties: { spreadsheetId: { type: 'string' }, range: { type: 'string', description: 'A1 range, e.g. Sheet1!B2:B100' }, type: { type: 'string', enum: ['ONE_OF_LIST', 'ONE_OF_RANGE', 'NUMBER_BETWEEN', 'NUMBER_GREATER', 'TEXT_CONTAINS', 'TEXT_NOT_CONTAINS', 'CUSTOM_FORMULA', 'BOOLEAN'], description: 'Validation type' }, values: { type: 'array', items: { type: 'string' }, description: 'Condition values (e.g. list items, range ref, min/max numbers, formula)' }, strict: { type: 'boolean', description: 'Reject invalid input (default true)' }, showCustomUi: { type: 'boolean', description: 'Show dropdown for list validations (default true)' }, inputMessage: { type: 'string', description: 'Help text shown when editing the cell' } }, required: ['spreadsheetId', 'range', 'type'] } },
+  { name: 'batch_clear_sheet', fn: batchClearSheet, description: 'Clear values from multiple ranges in one call', inputSchema: { type: 'object', properties: { spreadsheetId: { type: 'string' }, ranges: { type: 'array', items: { type: 'string' }, description: 'Array of A1 ranges to clear' } }, required: ['spreadsheetId', 'ranges'] } },
+  { name: 'add_chart', fn: addChart, description: 'Add an embedded chart to a Google Sheet', inputSchema: { type: 'object', properties: { spreadsheetId: { type: 'string' }, sheetName: { type: 'string', description: 'Fallback sheet name if sourceRange has no sheet prefix' }, chartType: { type: 'string', enum: ['BAR', 'LINE', 'PIE', 'COLUMN', 'AREA', 'SCATTER', 'COMBO'] }, title: { type: 'string', description: 'Chart title' }, sourceRange: { type: 'string', description: 'A1 range for chart data, e.g. Sheet1!A1:C10. First column is domain, remaining are series.' }, position: { type: 'object', properties: { sheetName: { type: 'string', description: 'Sheet to place chart on (defaults to source sheet)' }, rowIndex: { type: 'number', description: '0-based row for anchor cell' }, columnIndex: { type: 'number', description: '0-based column for anchor cell' } }, description: 'Where to place the chart overlay' } }, required: ['spreadsheetId', 'chartType', 'title', 'sourceRange'] } },
+  { name: 'delete_embedded_object', fn: deleteEmbeddedObject, description: 'Delete an embedded object (chart, image) by its ID', inputSchema: { type: 'object', properties: { spreadsheetId: { type: 'string' }, objectId: { type: 'number', description: 'Embedded object ID (chartId)' } }, required: ['spreadsheetId', 'objectId'] } },
+  { name: 'set_basic_filter', fn: setBasicFilter, description: 'Set a basic filter (auto-filter) on a range', inputSchema: { type: 'object', properties: { spreadsheetId: { type: 'string' }, range: { type: 'string', description: 'A1 range, e.g. Sheet1!A1:D100' } }, required: ['spreadsheetId', 'range'] } },
+  { name: 'clear_basic_filter', fn: clearBasicFilter, description: 'Clear the basic filter from a sheet', inputSchema: { type: 'object', properties: { spreadsheetId: { type: 'string' }, sheetName: { type: 'string', description: 'Tab name (defaults to first sheet)' } }, required: ['spreadsheetId'] } },
+  { name: 'add_filter_view', fn: addFilterView, description: 'Add a named filter view to a range', inputSchema: { type: 'object', properties: { spreadsheetId: { type: 'string' }, range: { type: 'string', description: 'A1 range, e.g. Sheet1!A1:D100' }, title: { type: 'string', description: 'Name for the filter view' } }, required: ['spreadsheetId', 'range', 'title'] } },
 ];

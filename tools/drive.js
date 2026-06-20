@@ -174,3 +174,164 @@ export async function resolveComment(auth, { fileId, commentId }) {
   });
   return `Resolved comment ${commentId}.`;
 }
+
+export async function listPermissions(auth, { fileId }) {
+  const drive = google.drive({ version: 'v3', auth });
+  const id = extractId(fileId);
+  const res = await drive.permissions.list({
+    fileId: id,
+    fields: 'permissions(id,type,role,emailAddress,domain,displayName)',
+  });
+  const perms = res.data.permissions || [];
+  if (!perms.length) return 'No permissions found.';
+  return perms.map(p => {
+    const lines = [`${p.displayName || p.emailAddress || p.domain || p.type}`, `  Role: ${p.role}`, `  Type: ${p.type}`, `  ID: ${p.id}`];
+    if (p.emailAddress) lines.push(`  Email: ${p.emailAddress}`);
+    if (p.domain) lines.push(`  Domain: ${p.domain}`);
+    return lines.join('\n');
+  }).join('\n\n');
+}
+
+export async function createPermission(auth, { fileId, role, type, emailAddress, domain, sendNotificationEmail = false }) {
+  const drive = google.drive({ version: 'v3', auth });
+  const id = extractId(fileId);
+  const requestBody = { role, type };
+  if (emailAddress) requestBody.emailAddress = emailAddress;
+  if (domain) requestBody.domain = domain;
+  const res = await drive.permissions.create({
+    fileId: id,
+    requestBody,
+    sendNotificationEmail,
+    fields: 'id,type,role,emailAddress,domain',
+  });
+  const p = res.data;
+  return `Permission created (ID: ${p.id}): ${p.role} for ${p.emailAddress || p.domain || p.type}`;
+}
+
+export async function updatePermission(auth, { fileId, permissionId, role }) {
+  const drive = google.drive({ version: 'v3', auth });
+  const id = extractId(fileId);
+  const res = await drive.permissions.update({
+    fileId: id,
+    permissionId,
+    requestBody: { role },
+    fields: 'id,role,type,emailAddress',
+  });
+  const p = res.data;
+  return `Permission ${p.id} updated to role: ${p.role}`;
+}
+
+export async function deletePermission(auth, { fileId, permissionId }) {
+  const drive = google.drive({ version: 'v3', auth });
+  const id = extractId(fileId);
+  await drive.permissions.delete({ fileId: id, permissionId });
+  return `Deleted permission ${permissionId}.`;
+}
+
+export async function updateComment(auth, { fileId, commentId, content }) {
+  const drive = google.drive({ version: 'v3', auth });
+  const id = extractId(fileId);
+  const res = await drive.comments.update({
+    fileId: id,
+    commentId,
+    requestBody: { content },
+    fields: 'id,content',
+  });
+  return `Comment ${res.data.id} updated: "${res.data.content}"`;
+}
+
+export async function deleteComment(auth, { fileId, commentId }) {
+  const drive = google.drive({ version: 'v3', auth });
+  const id = extractId(fileId);
+  await drive.comments.delete({ fileId: id, commentId });
+  return `Deleted comment ${commentId}.`;
+}
+
+export async function listReplies(auth, { fileId, commentId }) {
+  const drive = google.drive({ version: 'v3', auth });
+  const id = extractId(fileId);
+  const res = await drive.replies.list({
+    fileId: id,
+    commentId,
+    fields: 'replies(id,content,author,createdTime,action)',
+  });
+  const replies = res.data.replies || [];
+  if (!replies.length) return 'No replies found.';
+  return replies.map(r => {
+    const lines = [`${r.author?.displayName || 'Unknown'} (${r.createdTime})`, `  "${r.content}"`, `  ID: ${r.id}`];
+    if (r.action) lines.push(`  Action: ${r.action}`);
+    return lines.join('\n');
+  }).join('\n\n');
+}
+
+export async function createReply(auth, { fileId, commentId, content, action }) {
+  const drive = google.drive({ version: 'v3', auth });
+  const id = extractId(fileId);
+  const requestBody = { content };
+  if (action) requestBody.action = action;
+  const res = await drive.replies.create({
+    fileId: id,
+    commentId,
+    requestBody,
+    fields: 'id,content,action',
+  });
+  return `Reply added (ID: ${res.data.id}): "${res.data.content}"${res.data.action ? ` [${res.data.action}]` : ''}`;
+}
+
+export async function deleteReply(auth, { fileId, commentId, replyId }) {
+  const drive = google.drive({ version: 'v3', auth });
+  const id = extractId(fileId);
+  await drive.replies.delete({ fileId: id, commentId, replyId });
+  return `Deleted reply ${replyId}.`;
+}
+
+export async function listRevisions(auth, { fileId }) {
+  const drive = google.drive({ version: 'v3', auth });
+  const id = extractId(fileId);
+  const res = await drive.revisions.list({
+    fileId: id,
+    fields: 'revisions(id,modifiedTime,lastModifyingUser,size)',
+  });
+  const revisions = res.data.revisions || [];
+  if (!revisions.length) return 'No revisions found.';
+  return revisions.map(r => {
+    const lines = [`Revision ${r.id}`, `  Modified: ${r.modifiedTime}`];
+    if (r.lastModifyingUser) lines.push(`  By: ${r.lastModifyingUser.displayName || r.lastModifyingUser.emailAddress}`);
+    if (r.size) lines.push(`  Size: ${r.size} bytes`);
+    return lines.join('\n');
+  }).join('\n\n');
+}
+
+export async function getRevision(auth, { fileId, revisionId }) {
+  const drive = google.drive({ version: 'v3', auth });
+  const id = extractId(fileId);
+  const res = await drive.revisions.get({
+    fileId: id,
+    revisionId,
+    fields: 'id,modifiedTime,lastModifyingUser,size,mimeType',
+  });
+  const r = res.data;
+  const lines = [`Revision ${r.id}`, `  Modified: ${r.modifiedTime}`, `  MIME Type: ${r.mimeType}`];
+  if (r.lastModifyingUser) lines.push(`  By: ${r.lastModifyingUser.displayName || r.lastModifyingUser.emailAddress}`);
+  if (r.size) lines.push(`  Size: ${r.size} bytes`);
+  return lines.join('\n');
+}
+
+export async function aboutGet(auth) {
+  const drive = google.drive({ version: 'v3', auth });
+  const res = await drive.about.get({
+    fields: 'user,storageQuota',
+  });
+  const { user, storageQuota } = res.data;
+  const lines = [
+    `User: ${user.displayName}`,
+    `  Email: ${user.emailAddress}`,
+  ];
+  if (storageQuota) {
+    if (storageQuota.limit) lines.push(`  Storage Limit: ${storageQuota.limit} bytes`);
+    lines.push(`  Usage: ${storageQuota.usage} bytes`);
+    if (storageQuota.usageInDrive) lines.push(`  Drive Usage: ${storageQuota.usageInDrive} bytes`);
+    if (storageQuota.usageInDriveTrash) lines.push(`  Trash Usage: ${storageQuota.usageInDriveTrash} bytes`);
+  }
+  return lines.join('\n');
+}

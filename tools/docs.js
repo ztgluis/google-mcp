@@ -352,3 +352,327 @@ export async function listNamedRanges(auth, { fileId }) {
     return `${name}\n  ID: ${nr.namedRangeId}\n  Ranges: ${rangeInfo}`;
   }).join('\n\n');
 }
+
+export async function updateDocumentStyle(auth, { fileId, style }) {
+  const docs = google.docs({ version: 'v1', auth });
+  const id = extractId(fileId);
+
+  const documentStyle = {};
+  const fields = [];
+  if (style.marginTop !== undefined) { documentStyle.marginTop = { magnitude: style.marginTop, unit: 'PT' }; fields.push('marginTop'); }
+  if (style.marginBottom !== undefined) { documentStyle.marginBottom = { magnitude: style.marginBottom, unit: 'PT' }; fields.push('marginBottom'); }
+  if (style.marginLeft !== undefined) { documentStyle.marginLeft = { magnitude: style.marginLeft, unit: 'PT' }; fields.push('marginLeft'); }
+  if (style.marginRight !== undefined) { documentStyle.marginRight = { magnitude: style.marginRight, unit: 'PT' }; fields.push('marginRight'); }
+  if (style.pageSize) { documentStyle.pageSize = { width: { magnitude: style.pageSize.width, unit: 'PT' }, height: { magnitude: style.pageSize.height, unit: 'PT' } }; fields.push('pageSize'); }
+  if (style.background) { documentStyle.background = style.background; fields.push('background'); }
+
+  if (!fields.length) return 'No style properties provided.';
+  await docs.documents.batchUpdate({
+    documentId: id,
+    requestBody: { requests: [{ updateDocumentStyle: { documentStyle, fields: fields.join(',') } }] },
+  });
+  return `Updated document style: ${fields.join(', ')}.`;
+}
+
+export async function updateNamedStyle(auth, { fileId, namedStyleType, textStyle, paragraphStyle }) {
+  const docs = google.docs({ version: 'v1', auth });
+  const id = extractId(fileId);
+
+  const namedStyle = { namedStyleType };
+  const fields = [];
+
+  if (textStyle) {
+    namedStyle.textStyle = {};
+    const tf = [];
+    if (textStyle.bold !== undefined) { namedStyle.textStyle.bold = textStyle.bold; tf.push('bold'); }
+    if (textStyle.italic !== undefined) { namedStyle.textStyle.italic = textStyle.italic; tf.push('italic'); }
+    if (textStyle.underline !== undefined) { namedStyle.textStyle.underline = textStyle.underline; tf.push('underline'); }
+    if (textStyle.fontSize) { namedStyle.textStyle.fontSize = { magnitude: textStyle.fontSize, unit: 'PT' }; tf.push('fontSize'); }
+    if (textStyle.fontFamily) { namedStyle.textStyle.weightedFontFamily = { fontFamily: textStyle.fontFamily }; tf.push('weightedFontFamily'); }
+    if (textStyle.foregroundColor) { namedStyle.textStyle.foregroundColor = { color: { rgbColor: textStyle.foregroundColor } }; tf.push('foregroundColor'); }
+    fields.push(...tf.map(f => `textStyle.${f}`));
+  }
+
+  if (paragraphStyle) {
+    namedStyle.paragraphStyle = {};
+    const pf = [];
+    if (paragraphStyle.alignment) { namedStyle.paragraphStyle.alignment = paragraphStyle.alignment; pf.push('alignment'); }
+    if (paragraphStyle.lineSpacing) { namedStyle.paragraphStyle.lineSpacing = paragraphStyle.lineSpacing; pf.push('lineSpacing'); }
+    if (paragraphStyle.spaceAbove) { namedStyle.paragraphStyle.spaceAbove = { magnitude: paragraphStyle.spaceAbove, unit: 'PT' }; pf.push('spaceAbove'); }
+    if (paragraphStyle.spaceBelow) { namedStyle.paragraphStyle.spaceBelow = { magnitude: paragraphStyle.spaceBelow, unit: 'PT' }; pf.push('spaceBelow'); }
+    fields.push(...pf.map(f => `paragraphStyle.${f}`));
+  }
+
+  if (!fields.length) return 'No style properties provided.';
+  await docs.documents.batchUpdate({
+    documentId: id,
+    requestBody: {
+      requests: [{ updateNamedStyle: { namedStyleProperties: namedStyle, fields: fields.join(',') } }],
+    },
+  });
+  return `Updated named style "${namedStyleType}": ${fields.join(', ')}.`;
+}
+
+export async function insertSectionBreak(auth, { fileId, index, type }) {
+  const docs = google.docs({ version: 'v1', auth });
+  const id = extractId(fileId);
+  const sectionType = type || 'NEXT_PAGE';
+  await docs.documents.batchUpdate({
+    documentId: id,
+    requestBody: { requests: [{ insertSectionBreak: { location: { index }, sectionType } }] },
+  });
+  return `Inserted ${sectionType} section break at index ${index}.`;
+}
+
+export async function insertDate(auth, { fileId, index }) {
+  const docs = google.docs({ version: 'v1', auth });
+  const id = extractId(fileId);
+  await docs.documents.batchUpdate({
+    documentId: id,
+    requestBody: { requests: [{ insertDate: { location: { index } } }] },
+  });
+  return `Inserted date at index ${index}.`;
+}
+
+export async function insertPerson(auth, { fileId, email, index }) {
+  const docs = google.docs({ version: 'v1', auth });
+  const id = extractId(fileId);
+  await docs.documents.batchUpdate({
+    documentId: id,
+    requestBody: { requests: [{ insertPerson: { personProperties: { email }, location: { index } } }] },
+  });
+  return `Inserted person chip for ${email} at index ${index}.`;
+}
+
+export async function insertRichLink(auth, { fileId, url, index }) {
+  const docs = google.docs({ version: 'v1', auth });
+  const id = extractId(fileId);
+  await docs.documents.batchUpdate({
+    documentId: id,
+    requestBody: { requests: [{ insertRichLink: { richLinkProperties: { uri: url }, location: { index } } }] },
+  });
+  return `Inserted rich link to ${url} at index ${index}.`;
+}
+
+export async function mergeTableCells(auth, { fileId, tableStartIndex, rowStart, rowEnd, columnStart, columnEnd }) {
+  const docs = google.docs({ version: 'v1', auth });
+  const id = extractId(fileId);
+  await docs.documents.batchUpdate({
+    documentId: id,
+    requestBody: {
+      requests: [{
+        mergeTableCells: {
+          tableRange: {
+            tableCellLocation: { tableStartLocation: { index: tableStartIndex }, rowIndex: rowStart, columnIndex: columnStart },
+            rowSpan: rowEnd - rowStart,
+            columnSpan: columnEnd - columnStart,
+          },
+        },
+      }],
+    },
+  });
+  return `Merged table cells from (${rowStart},${columnStart}) to (${rowEnd},${columnEnd}).`;
+}
+
+export async function unmergeTableCells(auth, { fileId, tableStartIndex, rowStart, rowEnd, columnStart, columnEnd }) {
+  const docs = google.docs({ version: 'v1', auth });
+  const id = extractId(fileId);
+  await docs.documents.batchUpdate({
+    documentId: id,
+    requestBody: {
+      requests: [{
+        unmergeTableCells: {
+          tableRange: {
+            tableCellLocation: { tableStartLocation: { index: tableStartIndex }, rowIndex: rowStart, columnIndex: columnStart },
+            rowSpan: rowEnd - rowStart,
+            columnSpan: columnEnd - columnStart,
+          },
+        },
+      }],
+    },
+  });
+  return `Unmerged table cells from (${rowStart},${columnStart}) to (${rowEnd},${columnEnd}).`;
+}
+
+export async function formatTable(auth, { fileId, operations }) {
+  const docs = google.docs({ version: 'v1', auth });
+  const id = extractId(fileId);
+
+  const requests = operations.map(op => {
+    if (op.type === 'cellStyle') {
+      const tableCellLocation = {
+        tableStartLocation: { index: op.tableStartIndex },
+        rowIndex: op.rowIndex,
+        columnIndex: op.columnIndex,
+      };
+      const tableCellStyle = {};
+      const fields = [];
+      if (op.style.backgroundColor) { tableCellStyle.backgroundColor = { color: { rgbColor: op.style.backgroundColor } }; fields.push('backgroundColor'); }
+      if (op.style.borderTop) { tableCellStyle.borderTop = op.style.borderTop; fields.push('borderTop'); }
+      if (op.style.borderBottom) { tableCellStyle.borderBottom = op.style.borderBottom; fields.push('borderBottom'); }
+      if (op.style.borderLeft) { tableCellStyle.borderLeft = op.style.borderLeft; fields.push('borderLeft'); }
+      if (op.style.borderRight) { tableCellStyle.borderRight = op.style.borderRight; fields.push('borderRight'); }
+      if (op.style.contentAlignment) { tableCellStyle.contentAlignment = op.style.contentAlignment; fields.push('contentAlignment'); }
+      if (op.style.paddingTop !== undefined) { tableCellStyle.paddingTop = { magnitude: op.style.paddingTop, unit: 'PT' }; fields.push('paddingTop'); }
+      if (op.style.paddingBottom !== undefined) { tableCellStyle.paddingBottom = { magnitude: op.style.paddingBottom, unit: 'PT' }; fields.push('paddingBottom'); }
+      if (op.style.paddingLeft !== undefined) { tableCellStyle.paddingLeft = { magnitude: op.style.paddingLeft, unit: 'PT' }; fields.push('paddingLeft'); }
+      if (op.style.paddingRight !== undefined) { tableCellStyle.paddingRight = { magnitude: op.style.paddingRight, unit: 'PT' }; fields.push('paddingRight'); }
+      return { updateTableCellStyle: { tableCellLocation, tableCellStyle, fields: fields.join(',') } };
+    }
+    if (op.type === 'columnProperties') {
+      return {
+        updateTableColumnProperties: {
+          tableStartLocation: { index: op.tableStartIndex },
+          columnIndices: [op.columnIndex],
+          tableColumnProperties: { widthType: op.widthType || 'FIXED_WIDTH', width: { magnitude: op.width, unit: 'PT' } },
+          fields: 'widthType,width',
+        },
+      };
+    }
+    if (op.type === 'rowStyle') {
+      return {
+        updateTableRowStyle: {
+          tableStartLocation: { index: op.tableStartIndex },
+          rowIndices: [op.rowIndex],
+          tableRowStyle: { minRowHeight: { magnitude: op.minHeight, unit: 'PT' }, minRowHeightType: op.minHeightType || 'AT_LEAST' },
+          fields: 'minRowHeight,minRowHeightType',
+        },
+      };
+    }
+    return null;
+  }).filter(Boolean);
+
+  if (!requests.length) return 'No valid operations provided.';
+  await docs.documents.batchUpdate({ documentId: id, requestBody: { requests } });
+  return `Applied ${requests.length} table formatting operation(s).`;
+}
+
+export async function pinTableHeaderRows(auth, { fileId, tableStartIndex, pinnedCount }) {
+  const docs = google.docs({ version: 'v1', auth });
+  const id = extractId(fileId);
+  await docs.documents.batchUpdate({
+    documentId: id,
+    requestBody: {
+      requests: [{ pinTableHeaderRows: { tableStartLocation: { index: tableStartIndex }, pinnedHeaderRowsCount: pinnedCount } }],
+    },
+  });
+  return `Pinned ${pinnedCount} header row(s) for table at index ${tableStartIndex}.`;
+}
+
+export async function replaceImage(auth, { fileId, imageObjectId, uri }) {
+  const docs = google.docs({ version: 'v1', auth });
+  const id = extractId(fileId);
+  await docs.documents.batchUpdate({
+    documentId: id,
+    requestBody: { requests: [{ replaceImage: { imageObjectId, uri } }] },
+  });
+  return `Replaced image ${imageObjectId}.`;
+}
+
+export async function deletePositionedObject(auth, { fileId, objectId }) {
+  const docs = google.docs({ version: 'v1', auth });
+  const id = extractId(fileId);
+  await docs.documents.batchUpdate({
+    documentId: id,
+    requestBody: { requests: [{ deletePositionedObject: { objectId } }] },
+  });
+  return `Deleted positioned object ${objectId}.`;
+}
+
+export async function replaceNamedRangeContent(auth, { fileId, namedRangeId, name, text }) {
+  const docs = google.docs({ version: 'v1', auth });
+  const id = extractId(fileId);
+  const req = { replaceNamedRangeContent: { text } };
+  if (namedRangeId) req.replaceNamedRangeContent.namedRangeId = namedRangeId;
+  else if (name) req.replaceNamedRangeContent.name = name;
+  await docs.documents.batchUpdate({ documentId: id, requestBody: { requests: [req] } });
+  return `Replaced content in named range ${namedRangeId || name}.`;
+}
+
+export async function createFootnote(auth, { fileId, index }) {
+  const docs = google.docs({ version: 'v1', auth });
+  const id = extractId(fileId);
+  const res = await docs.documents.batchUpdate({
+    documentId: id,
+    requestBody: { requests: [{ createFootnote: { location: { index } } }] },
+  });
+  const footnoteId = res.data.replies[0].createFootnote.footnoteId;
+  return `Created footnote at index ${index} (ID: ${footnoteId}).`;
+}
+
+export async function deleteHeader(auth, { fileId, headerId }) {
+  const docs = google.docs({ version: 'v1', auth });
+  const id = extractId(fileId);
+  await docs.documents.batchUpdate({
+    documentId: id,
+    requestBody: { requests: [{ deleteHeader: { headerId } }] },
+  });
+  return `Deleted header ${headerId}.`;
+}
+
+export async function deleteFooter(auth, { fileId, footerId }) {
+  const docs = google.docs({ version: 'v1', auth });
+  const id = extractId(fileId);
+  await docs.documents.batchUpdate({
+    documentId: id,
+    requestBody: { requests: [{ deleteFooter: { footerId } }] },
+  });
+  return `Deleted footer ${footerId}.`;
+}
+
+export async function addDocumentTab(auth, { fileId, title }) {
+  const docs = google.docs({ version: 'v1', auth });
+  const id = extractId(fileId);
+  const res = await docs.documents.batchUpdate({
+    documentId: id,
+    requestBody: {
+      requests: [{ addDocumentTab: { documentTab: { tabProperties: { title } } } }],
+    },
+  });
+  const reply = res.data.replies[0].addDocumentTab;
+  return `Added tab "${title}" (ID: ${reply.tabId}).`;
+}
+
+export async function deleteDocTab(auth, { fileId, tabId }) {
+  const docs = google.docs({ version: 'v1', auth });
+  const id = extractId(fileId);
+  await docs.documents.batchUpdate({
+    documentId: id,
+    requestBody: {
+      requests: [{ deleteTab: { tabProperties: { tabId } } }],
+    },
+  });
+  return `Deleted tab ${tabId}.`;
+}
+
+export async function updateSectionStyle(auth, { fileId, startIndex, endIndex, style }) {
+  const docs = google.docs({ version: 'v1', auth });
+  const id = extractId(fileId);
+
+  const sectionStyle = {};
+  const fields = [];
+  if (style.columnProperties) { sectionStyle.columnProperties = style.columnProperties; fields.push('columnProperties'); }
+  if (style.sectionType) { sectionStyle.sectionType = style.sectionType; fields.push('sectionType'); }
+  if (style.defaultHeaderId) { sectionStyle.defaultHeaderId = style.defaultHeaderId; fields.push('defaultHeaderId'); }
+  if (style.defaultFooterId) { sectionStyle.defaultFooterId = style.defaultFooterId; fields.push('defaultFooterId'); }
+  if (style.firstPageHeaderId) { sectionStyle.firstPageHeaderId = style.firstPageHeaderId; fields.push('firstPageHeaderId'); }
+  if (style.firstPageFooterId) { sectionStyle.firstPageFooterId = style.firstPageFooterId; fields.push('firstPageFooterId'); }
+  if (style.evenPageHeaderId) { sectionStyle.evenPageHeaderId = style.evenPageHeaderId; fields.push('evenPageHeaderId'); }
+  if (style.evenPageFooterId) { sectionStyle.evenPageFooterId = style.evenPageFooterId; fields.push('evenPageFooterId'); }
+  if (style.useFirstPageHeaderFooter !== undefined) { sectionStyle.useFirstPageHeaderFooter = style.useFirstPageHeaderFooter; fields.push('useFirstPageHeaderFooter'); }
+  if (style.pageNumberStart !== undefined) { sectionStyle.pageNumberStart = style.pageNumberStart; fields.push('pageNumberStart'); }
+  if (style.contentDirection) { sectionStyle.contentDirection = style.contentDirection; fields.push('contentDirection'); }
+  if (style.marginTop !== undefined) { sectionStyle.marginTop = { magnitude: style.marginTop, unit: 'PT' }; fields.push('marginTop'); }
+  if (style.marginBottom !== undefined) { sectionStyle.marginBottom = { magnitude: style.marginBottom, unit: 'PT' }; fields.push('marginBottom'); }
+  if (style.marginLeft !== undefined) { sectionStyle.marginLeft = { magnitude: style.marginLeft, unit: 'PT' }; fields.push('marginLeft'); }
+  if (style.marginRight !== undefined) { sectionStyle.marginRight = { magnitude: style.marginRight, unit: 'PT' }; fields.push('marginRight'); }
+
+  if (!fields.length) return 'No section style properties provided.';
+  await docs.documents.batchUpdate({
+    documentId: id,
+    requestBody: {
+      requests: [{ updateSectionStyle: { range: { startIndex, endIndex }, sectionStyle, fields: fields.join(',') } }],
+    },
+  });
+  return `Updated section style: ${fields.join(', ')}.`;
+}

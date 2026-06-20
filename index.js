@@ -2,8 +2,8 @@ import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { getAuth } from './google.js';
-import { searchDrive, trashFile, renameFile, moveFile, copyFile, listFolder, createFolder, getFileMetadata, addComment, listComments, resolveComment } from './tools/drive.js';
-import { createDoc, copyDoc, formatDoc, exportDoc, listDocTabs, updateHeaderFooter, insertImage, renameDoc, renameDocTab, readDoc, editDoc, insertTable, modifyTable, updateList, insertPageBreak, createNamedRange, deleteNamedRange, listNamedRanges } from './tools/docs.js';
+import { searchDrive, trashFile, renameFile, moveFile, copyFile, listFolder, createFolder, getFileMetadata, addComment, listComments, resolveComment, listPermissions, createPermission, updatePermission, deletePermission, updateComment, deleteComment, listReplies, createReply, deleteReply, listRevisions, getRevision, aboutGet } from './tools/drive.js';
+import { createDoc, copyDoc, formatDoc, exportDoc, listDocTabs, updateHeaderFooter, insertImage, renameDoc, renameDocTab, readDoc, editDoc, insertTable, modifyTable, updateList, insertPageBreak, createNamedRange, deleteNamedRange, listNamedRanges, updateDocumentStyle, updateNamedStyle, insertSectionBreak, insertDate, insertPerson, insertRichLink, mergeTableCells, unmergeTableCells, formatTable, pinTableHeaderRows, replaceImage, deletePositionedObject, replaceNamedRangeContent, createFootnote, deleteHeader, deleteFooter, addDocumentTab, deleteDocTab, updateSectionStyle } from './tools/docs.js';
 import { TOOLS as SHEET_TOOLS } from './tools/sheets.js';
 import { TOOLS as FORMAT_TOOLS } from './tools/sheets-format.js';
 import { TOOLS as STRUCTURE_TOOLS } from './tools/sheets-structure.js';
@@ -317,6 +317,142 @@ const DRIVE_DOC_TOOLS = [
       required: ['fileId', 'commentId'],
     },
   },
+  // --- Permissions ---
+  {
+    name: 'list_permissions',
+    description: 'List who has access to a Google Drive file.',
+    inputSchema: { type: 'object', properties: { fileId: { type: 'string', description: 'File ID or URL' } }, required: ['fileId'] },
+  },
+  {
+    name: 'create_permission',
+    description: 'Share a Google Drive file with a user, group, domain, or anyone.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        fileId: { type: 'string', description: 'File ID or URL' },
+        role: { type: 'string', enum: ['reader', 'writer', 'commenter', 'owner'], description: 'Permission role' },
+        type: { type: 'string', enum: ['user', 'group', 'domain', 'anyone'], description: 'Grantee type' },
+        emailAddress: { type: 'string', description: 'Email (for user/group type)' },
+        domain: { type: 'string', description: 'Domain (for domain type)' },
+        sendNotificationEmail: { type: 'boolean', description: 'Send notification (default: false)' },
+      },
+      required: ['fileId', 'role', 'type'],
+    },
+  },
+  {
+    name: 'update_permission',
+    description: 'Update a permission role on a Google Drive file.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        fileId: { type: 'string', description: 'File ID or URL' },
+        permissionId: { type: 'string', description: 'Permission ID' },
+        role: { type: 'string', enum: ['reader', 'writer', 'commenter', 'owner'] },
+      },
+      required: ['fileId', 'permissionId', 'role'],
+    },
+  },
+  {
+    name: 'delete_permission',
+    description: 'Remove a permission from a Google Drive file.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        fileId: { type: 'string', description: 'File ID or URL' },
+        permissionId: { type: 'string', description: 'Permission ID' },
+      },
+      required: ['fileId', 'permissionId'],
+    },
+  },
+  // --- Comment/reply management ---
+  {
+    name: 'update_comment',
+    description: 'Edit a comment on a Google Drive file.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        fileId: { type: 'string', description: 'File ID or URL' },
+        commentId: { type: 'string' },
+        content: { type: 'string', description: 'New comment text' },
+      },
+      required: ['fileId', 'commentId', 'content'],
+    },
+  },
+  {
+    name: 'delete_comment',
+    description: 'Delete a comment from a Google Drive file.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        fileId: { type: 'string', description: 'File ID or URL' },
+        commentId: { type: 'string' },
+      },
+      required: ['fileId', 'commentId'],
+    },
+  },
+  {
+    name: 'list_replies',
+    description: 'List replies on a comment.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        fileId: { type: 'string', description: 'File ID or URL' },
+        commentId: { type: 'string' },
+      },
+      required: ['fileId', 'commentId'],
+    },
+  },
+  {
+    name: 'create_reply',
+    description: 'Reply to a comment on a Google Drive file.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        fileId: { type: 'string', description: 'File ID or URL' },
+        commentId: { type: 'string' },
+        content: { type: 'string', description: 'Reply text' },
+        action: { type: 'string', enum: ['resolve', 'reopen'], description: 'Optional action' },
+      },
+      required: ['fileId', 'commentId', 'content'],
+    },
+  },
+  {
+    name: 'delete_reply',
+    description: 'Delete a reply from a comment.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        fileId: { type: 'string', description: 'File ID or URL' },
+        commentId: { type: 'string' },
+        replyId: { type: 'string' },
+      },
+      required: ['fileId', 'commentId', 'replyId'],
+    },
+  },
+  // --- Revisions ---
+  {
+    name: 'list_revisions',
+    description: 'List revision history of a Google Drive file.',
+    inputSchema: { type: 'object', properties: { fileId: { type: 'string', description: 'File ID or URL' } }, required: ['fileId'] },
+  },
+  {
+    name: 'get_revision',
+    description: 'Get details of a specific file revision.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        fileId: { type: 'string', description: 'File ID or URL' },
+        revisionId: { type: 'string' },
+      },
+      required: ['fileId', 'revisionId'],
+    },
+  },
+  // --- About ---
+  {
+    name: 'about',
+    description: 'Get Google Drive account info and storage quota.',
+    inputSchema: { type: 'object', properties: {} },
+  },
   // --- Docs: tables, lists, page breaks, named ranges ---
   {
     name: 'insert_table',
@@ -422,6 +558,281 @@ const DRIVE_DOC_TOOLS = [
       required: ['fileId'],
     },
   },
+  // --- Docs: document & section styles ---
+  {
+    name: 'update_document_style',
+    description: 'Update page-level style of a Google Doc (margins, page size, background color).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        fileId: { type: 'string', description: 'Google Doc file ID or URL' },
+        style: {
+          type: 'object',
+          description: 'Style properties',
+          properties: {
+            marginTop: { type: 'number', description: 'Top margin in PT' },
+            marginBottom: { type: 'number', description: 'Bottom margin in PT' },
+            marginLeft: { type: 'number', description: 'Left margin in PT' },
+            marginRight: { type: 'number', description: 'Right margin in PT' },
+            pageSize: { type: 'object', properties: { width: { type: 'number' }, height: { type: 'number' } }, description: 'Page dimensions in PT' },
+            background: { type: 'object', description: 'Background color as { color: { rgbColor: { red, green, blue } } }' },
+          },
+        },
+      },
+      required: ['fileId', 'style'],
+    },
+  },
+  {
+    name: 'update_named_style',
+    description: 'Update a named style (e.g. HEADING_1, NORMAL_TEXT) in a Google Doc.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        fileId: { type: 'string', description: 'Google Doc file ID or URL' },
+        namedStyleType: { type: 'string', enum: ['NORMAL_TEXT', 'HEADING_1', 'HEADING_2', 'HEADING_3', 'HEADING_4', 'HEADING_5', 'HEADING_6', 'TITLE', 'SUBTITLE'] },
+        textStyle: { type: 'object', description: 'Text style properties (bold, italic, fontSize, fontFamily, etc.)' },
+        paragraphStyle: { type: 'object', description: 'Paragraph style properties (alignment, lineSpacing, etc.)' },
+      },
+      required: ['fileId', 'namedStyleType'],
+    },
+  },
+  {
+    name: 'insert_section_break',
+    description: 'Insert a section break in a Google Doc.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        fileId: { type: 'string', description: 'Google Doc file ID or URL' },
+        index: { type: 'number', description: 'Document index' },
+        type: { type: 'string', enum: ['NEXT_PAGE', 'CONTINUOUS'], description: 'Section break type (default: NEXT_PAGE)' },
+      },
+      required: ['fileId', 'index'],
+    },
+  },
+  {
+    name: 'update_section_style',
+    description: 'Update section-level style in a Google Doc (columns, margins, headers/footers).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        fileId: { type: 'string', description: 'Google Doc file ID or URL' },
+        startIndex: { type: 'number' },
+        endIndex: { type: 'number' },
+        style: { type: 'object', description: 'Section style properties (columnProperties, sectionType, etc.)' },
+      },
+      required: ['fileId', 'startIndex', 'endIndex', 'style'],
+    },
+  },
+  // --- Docs: insert special elements ---
+  {
+    name: 'insert_date',
+    description: 'Insert a date chip into a Google Doc.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        fileId: { type: 'string', description: 'Google Doc file ID or URL' },
+        index: { type: 'number', description: 'Document index' },
+      },
+      required: ['fileId', 'index'],
+    },
+  },
+  {
+    name: 'insert_person',
+    description: 'Insert a person mention (@ chip) into a Google Doc.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        fileId: { type: 'string', description: 'Google Doc file ID or URL' },
+        email: { type: 'string', description: 'Email address of the person' },
+        index: { type: 'number', description: 'Document index' },
+      },
+      required: ['fileId', 'email', 'index'],
+    },
+  },
+  {
+    name: 'insert_rich_link',
+    description: 'Insert a rich link (smart chip) to a Google file into a Google Doc.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        fileId: { type: 'string', description: 'Google Doc file ID or URL' },
+        url: { type: 'string', description: 'URL of the Google resource to link' },
+        index: { type: 'number', description: 'Document index' },
+      },
+      required: ['fileId', 'url', 'index'],
+    },
+  },
+  {
+    name: 'create_footnote',
+    description: 'Create a footnote at a position in a Google Doc.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        fileId: { type: 'string', description: 'Google Doc file ID or URL' },
+        index: { type: 'number', description: 'Document index' },
+      },
+      required: ['fileId', 'index'],
+    },
+  },
+  // --- Docs: table formatting ---
+  {
+    name: 'merge_table_cells',
+    description: 'Merge cells in a Google Doc table.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        fileId: { type: 'string', description: 'Google Doc file ID or URL' },
+        tableStartIndex: { type: 'number', description: 'Table start index' },
+        rowStart: { type: 'number' }, rowEnd: { type: 'number' },
+        columnStart: { type: 'number' }, columnEnd: { type: 'number' },
+      },
+      required: ['fileId', 'tableStartIndex', 'rowStart', 'rowEnd', 'columnStart', 'columnEnd'],
+    },
+  },
+  {
+    name: 'unmerge_table_cells',
+    description: 'Unmerge cells in a Google Doc table.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        fileId: { type: 'string', description: 'Google Doc file ID or URL' },
+        tableStartIndex: { type: 'number', description: 'Table start index' },
+        rowStart: { type: 'number' }, rowEnd: { type: 'number' },
+        columnStart: { type: 'number' }, columnEnd: { type: 'number' },
+      },
+      required: ['fileId', 'tableStartIndex', 'rowStart', 'rowEnd', 'columnStart', 'columnEnd'],
+    },
+  },
+  {
+    name: 'format_table',
+    description: 'Format table cells, columns, or rows in a Google Doc (borders, backgrounds, padding, widths, heights).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        fileId: { type: 'string', description: 'Google Doc file ID or URL' },
+        operations: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              type: { type: 'string', enum: ['cellStyle', 'columnProperties', 'rowStyle'] },
+              tableStartIndex: { type: 'number' },
+              rowIndex: { type: 'number' }, columnIndex: { type: 'number' },
+              style: { type: 'object', description: 'For cellStyle: backgroundColor, borders, contentAlignment, padding' },
+              width: { type: 'number', description: 'For columnProperties: width in PT' },
+              widthType: { type: 'string', enum: ['EVENLY_DISTRIBUTED', 'FIXED_WIDTH'] },
+              minHeight: { type: 'number', description: 'For rowStyle: min height in PT' },
+              minHeightType: { type: 'string', enum: ['AT_LEAST', 'EXACTLY'] },
+            },
+            required: ['type', 'tableStartIndex'],
+          },
+        },
+      },
+      required: ['fileId', 'operations'],
+    },
+  },
+  {
+    name: 'pin_table_header_rows',
+    description: 'Pin header rows in a Google Doc table.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        fileId: { type: 'string', description: 'Google Doc file ID or URL' },
+        tableStartIndex: { type: 'number' },
+        pinnedCount: { type: 'number', description: 'Number of header rows to pin' },
+      },
+      required: ['fileId', 'tableStartIndex', 'pinnedCount'],
+    },
+  },
+  // --- Docs: images & objects ---
+  {
+    name: 'replace_image',
+    description: 'Replace an existing image in a Google Doc.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        fileId: { type: 'string', description: 'Google Doc file ID or URL' },
+        imageObjectId: { type: 'string', description: 'Object ID of the image to replace' },
+        uri: { type: 'string', description: 'New image URL' },
+      },
+      required: ['fileId', 'imageObjectId', 'uri'],
+    },
+  },
+  {
+    name: 'delete_positioned_object',
+    description: 'Delete a positioned object (e.g. floating image) from a Google Doc.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        fileId: { type: 'string', description: 'Google Doc file ID or URL' },
+        objectId: { type: 'string', description: 'Object ID to delete' },
+      },
+      required: ['fileId', 'objectId'],
+    },
+  },
+  {
+    name: 'replace_named_range_content',
+    description: 'Replace the content of a named range in a Google Doc (useful for templates).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        fileId: { type: 'string', description: 'Google Doc file ID or URL' },
+        namedRangeId: { type: 'string', description: 'Named range ID' },
+        name: { type: 'string', description: 'Named range name (alternative to ID)' },
+        text: { type: 'string', description: 'Replacement text' },
+      },
+      required: ['fileId', 'text'],
+    },
+  },
+  // --- Docs: headers, footers, tabs ---
+  {
+    name: 'delete_header',
+    description: 'Delete a header from a Google Doc.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        fileId: { type: 'string', description: 'Google Doc file ID or URL' },
+        headerId: { type: 'string', description: 'Header ID to delete' },
+      },
+      required: ['fileId', 'headerId'],
+    },
+  },
+  {
+    name: 'delete_footer',
+    description: 'Delete a footer from a Google Doc.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        fileId: { type: 'string', description: 'Google Doc file ID or URL' },
+        footerId: { type: 'string', description: 'Footer ID to delete' },
+      },
+      required: ['fileId', 'footerId'],
+    },
+  },
+  {
+    name: 'add_doc_tab',
+    description: 'Add a new tab to a Google Doc.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        fileId: { type: 'string', description: 'Google Doc file ID or URL' },
+        title: { type: 'string', description: 'Tab title' },
+      },
+      required: ['fileId', 'title'],
+    },
+  },
+  {
+    name: 'delete_doc_tab',
+    description: 'Delete a tab from a Google Doc.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        fileId: { type: 'string', description: 'Google Doc file ID or URL' },
+        tabId: { type: 'string', description: 'Tab ID to delete' },
+      },
+      required: ['fileId', 'tabId'],
+    },
+  },
 ];
 
 const server = new Server(
@@ -471,6 +882,37 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     else if (name === 'create_named_range') result = await createNamedRange(auth, args);
     else if (name === 'delete_named_range') result = await deleteNamedRange(auth, args);
     else if (name === 'list_named_ranges') result = await listNamedRanges(auth, args);
+    else if (name === 'list_permissions') result = await listPermissions(auth, args);
+    else if (name === 'create_permission') result = await createPermission(auth, args);
+    else if (name === 'update_permission') result = await updatePermission(auth, args);
+    else if (name === 'delete_permission') result = await deletePermission(auth, args);
+    else if (name === 'update_comment') result = await updateComment(auth, args);
+    else if (name === 'delete_comment') result = await deleteComment(auth, args);
+    else if (name === 'list_replies') result = await listReplies(auth, args);
+    else if (name === 'create_reply') result = await createReply(auth, args);
+    else if (name === 'delete_reply') result = await deleteReply(auth, args);
+    else if (name === 'list_revisions') result = await listRevisions(auth, args);
+    else if (name === 'get_revision') result = await getRevision(auth, args);
+    else if (name === 'about') result = await aboutGet(auth);
+    else if (name === 'update_document_style') result = await updateDocumentStyle(auth, args);
+    else if (name === 'update_named_style') result = await updateNamedStyle(auth, args);
+    else if (name === 'insert_section_break') result = await insertSectionBreak(auth, args);
+    else if (name === 'update_section_style') result = await updateSectionStyle(auth, args);
+    else if (name === 'insert_date') result = await insertDate(auth, args);
+    else if (name === 'insert_person') result = await insertPerson(auth, args);
+    else if (name === 'insert_rich_link') result = await insertRichLink(auth, args);
+    else if (name === 'create_footnote') result = await createFootnote(auth, args);
+    else if (name === 'merge_table_cells') result = await mergeTableCells(auth, args);
+    else if (name === 'unmerge_table_cells') result = await unmergeTableCells(auth, args);
+    else if (name === 'format_table') result = await formatTable(auth, args);
+    else if (name === 'pin_table_header_rows') result = await pinTableHeaderRows(auth, args);
+    else if (name === 'replace_image') result = await replaceImage(auth, args);
+    else if (name === 'delete_positioned_object') result = await deletePositionedObject(auth, args);
+    else if (name === 'replace_named_range_content') result = await replaceNamedRangeContent(auth, args);
+    else if (name === 'delete_header') result = await deleteHeader(auth, args);
+    else if (name === 'delete_footer') result = await deleteFooter(auth, args);
+    else if (name === 'add_doc_tab') result = await addDocumentTab(auth, args);
+    else if (name === 'delete_doc_tab') result = await deleteDocTab(auth, args);
     else if (HANDLERS[name]) result = await HANDLERS[name](auth, args);
     else throw new Error(`Unknown tool: ${name}`);
 

@@ -40,9 +40,9 @@ Use `-s user` (not `-s project`) so the registration is stored locally in `~/.cl
 
 Restart Claude Code to load the server.
 
-## Tools (52)
+## Tools (104)
 
-### Drive
+### Drive — Files
 - `search_drive` — search files by name or content
 - `get_file_metadata` — file info (name, type, size, owner, dates, parents)
 - `rename_file` — rename any file or folder
@@ -51,53 +51,112 @@ Restart Claude Code to load the server.
 - `create_folder` — create a new folder
 - `trash_file` — move to trash or permanently delete
 - `list_folder` — list contents of a folder
+- `about` — account info and storage quota
 
-### Comments
-- `add_comment` — add a comment to any Drive file, optionally anchored to quoted text
+### Drive — Permissions
+- `list_permissions` — list who has access to a file
+- `create_permission` — share a file with a user, group, domain, or anyone
+- `update_permission` — change a permission's role
+- `delete_permission` — remove access
+
+### Drive — Comments & Replies
+- `add_comment` — add a comment, optionally anchored to quoted text
 - `list_comments` — list comments on a file
 - `resolve_comment` — resolve a comment
+- `update_comment` — edit a comment
+- `delete_comment` — delete a comment
+- `list_replies` — list replies on a comment
+- `create_reply` — reply to a comment (with optional resolve/reopen action)
+- `delete_reply` — delete a reply
 
-### Docs
+### Drive — Revisions
+- `list_revisions` — list revision history
+- `get_revision` — get details of a specific revision
+
+### Docs — Content
 - `create_doc` — create a new Google Doc
 - `read_doc` — read a Google Doc as plain text / markdown
 - `edit_doc` — insert, delete, replace, or append text
-- `format_doc` — bold, italic, underline, font, colors, headings, alignment, hyperlinks
 - `copy_doc` — copy a Google Doc
 - `rename_doc` — rename a Google Doc
 - `export_doc` — export to PDF, DOCX, TXT, HTML, RTF, or EPUB
-- `insert_image` — insert an inline image from a URL
-- `insert_table` — insert a table
-- `modify_table` — insert/delete rows and columns in a table
+
+### Docs — Formatting
+- `format_doc` — bold, italic, underline, font, colors, headings, alignment, hyperlinks
+- `update_document_style` — page margins, size, background color
+- `update_named_style` — modify heading/paragraph styles globally
+- `update_section_style` — section-level columns, margins, headers/footers
 - `update_list` — apply or remove bulleted/numbered list formatting
+
+### Docs — Tables
+- `insert_table` — insert a table
+- `modify_table` — insert/delete rows and columns
+- `merge_table_cells` — merge cells in a table
+- `unmerge_table_cells` — unmerge cells in a table
+- `format_table` — cell borders, backgrounds, padding, column widths, row heights
+- `pin_table_header_rows` — pin header rows in a table
+
+### Docs — Special Elements
+- `insert_image` — insert an inline image from a URL
+- `replace_image` — replace an existing image
+- `delete_positioned_object` — delete a floating image or object
 - `insert_page_break` — insert a page break
+- `insert_section_break` — insert a section break (next page or continuous)
+- `insert_date` — insert a date chip
+- `insert_person` — insert a person mention (@ chip)
+- `insert_rich_link` — insert a smart chip linking to a Google file
+- `create_footnote` — create a footnote
+
+### Docs — Named Ranges
 - `create_named_range` — create a named range (bookmark)
 - `delete_named_range` — delete a named range
 - `list_named_ranges` — list all named ranges
+- `replace_named_range_content` — replace content in a named range (templates)
+
+### Docs — Headers, Footers & Tabs
+- `update_header_footer` — create or replace headers/footers
+- `delete_header` — delete a header
+- `delete_footer` — delete a footer
 - `list_doc_tabs` — list tabs in a doc
 - `rename_doc_tab` — rename a doc tab
-- `update_header_footer` — create or replace headers/footers
+- `add_doc_tab` — add a new tab
+- `delete_doc_tab` — delete a tab
 
 ### Sheets — Data
 - `read_sheet` — read a range
 - `batch_read_sheet` — read multiple ranges in one call
-- `append_sheet_row` — append a row after the last data row (supports `dataRange` for complex layouts)
+- `append_sheet_row` — append a row after the last data row
 - `update_sheet_cell` — update a single cell or range
 - `batch_update_sheet` — write to multiple ranges in one call
 - `clear_sheet` — clear values in a range
+- `batch_clear_sheet` — clear multiple ranges in one call
 - `insert_rows` — insert rows at a position, optionally with data
 - `delete_rows` — delete rows
 - `delete_columns` — delete columns
 - `find_replace` — find and replace text
 - `sort_range` — sort a range by one or more columns
 - `export_sheet` — export to CSV, TSV, XLSX, PDF, or HTML
+- `set_data_validation` — set dropdowns, number rules, or custom formulas
+- `text_to_columns` — split text into columns by delimiter
 
 ### Sheets — Formatting
 - `format_cells` — colors, fonts, alignment, number formats, wrap strategy
+- `update_borders` — cell borders (solid, dashed, dotted, thick, double)
 - `merge_cells` — merge a range
 - `unmerge_cells` — unmerge a range
 - `add_conditional_formatting` — boolean or gradient rules
-- `freeze` — freeze rows/columns (with merged-cell conflict detection)
+- `add_banding` — alternating row colors
+- `update_banding` — update banding colors
+- `delete_banding` — remove banding
+- `freeze` — freeze rows/columns
 - `auto_resize` — auto-fit columns or rows to content
+
+### Sheets — Charts & Filters
+- `add_chart` — create a chart (bar, line, pie, column, area, scatter, combo)
+- `delete_embedded_object` — delete a chart or embedded object
+- `set_basic_filter` — set auto-filter on a range
+- `clear_basic_filter` — remove auto-filter
+- `add_filter_view` — create a named filter view
 
 ### Sheets — Structure
 - `get_sheet_metadata` — title, URL, sheet names, IDs, dimensions, frozen rows/cols
@@ -108,6 +167,12 @@ Restart Claude Code to load the server.
 - `duplicate_sheet` — duplicate a tab within the same spreadsheet
 - `copy_sheet_to` — copy a tab to a different spreadsheet
 - `update_sheet_properties` — change tab title, color, grid size, frozen rows/cols
+- `add_protected_range` — protect a range (with optional warning-only mode)
+- `update_protected_range` — modify a protected range
+- `delete_protected_range` — remove range protection
+- `move_dimension` — move rows or columns to a new position
+- `add_dimension_group` — create collapsible row/column groups
+- `delete_dimension_group` — remove row/column groups
 
 ## Security
 

@@ -169,6 +169,82 @@ export async function autoResize(auth, { spreadsheetId, sheetName, dimension = '
   return `Auto-resized ${dimension.toLowerCase()}s ${startIndex}–${endIndex} on "${sheetName || 'first sheet'}".`;
 }
 
+export async function updateBorders(auth, { spreadsheetId, range, top, bottom, left, right, innerHorizontal, innerVertical }) {
+  const id = extractId(spreadsheetId);
+  const api = sheets(auth);
+  const { sheetName, range: cleanRange } = extractSheetName(range);
+  const sheetId = await getSheetId(api, id, sheetName);
+  const gridRange = parseRange(cleanRange, sheetId);
+
+  function makeBorder(b) {
+    if (!b) return undefined;
+    const border = {};
+    if (b.style) border.style = b.style;
+    if (b.width !== undefined) border.width = b.width;
+    if (b.color) border.color = b.color;
+    return border;
+  }
+
+  const updateBordersReq = { range: gridRange };
+  if (top) updateBordersReq.top = makeBorder(top);
+  if (bottom) updateBordersReq.bottom = makeBorder(bottom);
+  if (left) updateBordersReq.left = makeBorder(left);
+  if (right) updateBordersReq.right = makeBorder(right);
+  if (innerHorizontal) updateBordersReq.innerHorizontal = makeBorder(innerHorizontal);
+  if (innerVertical) updateBordersReq.innerVertical = makeBorder(innerVertical);
+
+  await api.spreadsheets.batchUpdate({
+    spreadsheetId: id,
+    requestBody: { requests: [{ updateBorders: updateBordersReq }] },
+  });
+  return `Updated borders on ${range}.`;
+}
+
+export async function addBanding(auth, { spreadsheetId, range, headerColor, firstBandColor, secondBandColor, footerColor }) {
+  const id = extractId(spreadsheetId);
+  const api = sheets(auth);
+  const { sheetName, range: cleanRange } = extractSheetName(range);
+  const sheetId = await getSheetId(api, id, sheetName);
+  const gridRange = parseRange(cleanRange, sheetId);
+
+  const rowProperties = {};
+  if (headerColor) rowProperties.headerColor = headerColor;
+  if (firstBandColor) rowProperties.firstBandColor = firstBandColor;
+  if (secondBandColor) rowProperties.secondBandColor = secondBandColor;
+  if (footerColor) rowProperties.footerColor = footerColor;
+
+  await api.spreadsheets.batchUpdate({
+    spreadsheetId: id,
+    requestBody: { requests: [{ addBanding: { bandedRange: { range: gridRange, rowProperties } } }] },
+  });
+  return `Added banding to ${range}.`;
+}
+
+export async function deleteBanding(auth, { spreadsheetId, bandedRangeId }) {
+  const id = extractId(spreadsheetId);
+  await sheets(auth).spreadsheets.batchUpdate({
+    spreadsheetId: id,
+    requestBody: { requests: [{ deleteBanding: { bandedRangeId } }] },
+  });
+  return `Deleted banded range (id=${bandedRangeId}).`;
+}
+
+export async function updateBanding(auth, { spreadsheetId, bandedRangeId, headerColor, firstBandColor, secondBandColor, footerColor }) {
+  const id = extractId(spreadsheetId);
+  const rowProperties = {};
+  const fields = [];
+  if (headerColor) { rowProperties.headerColor = headerColor; fields.push('rowProperties.headerColor'); }
+  if (firstBandColor) { rowProperties.firstBandColor = firstBandColor; fields.push('rowProperties.firstBandColor'); }
+  if (secondBandColor) { rowProperties.secondBandColor = secondBandColor; fields.push('rowProperties.secondBandColor'); }
+  if (footerColor) { rowProperties.footerColor = footerColor; fields.push('rowProperties.footerColor'); }
+
+  await sheets(auth).spreadsheets.batchUpdate({
+    spreadsheetId: id,
+    requestBody: { requests: [{ updateBanding: { bandedRange: { bandedRangeId, rowProperties }, fields: fields.join(',') } }] },
+  });
+  return `Updated banded range (id=${bandedRangeId}).`;
+}
+
 // ── Tool definitions ──────────────────────────────────────────────────────────
 
 export const TOOLS = [
@@ -178,4 +254,8 @@ export const TOOLS = [
   { name: 'add_conditional_formatting', fn: addConditionalFormatting, description: 'Add conditional formatting rules to a Google Sheet', inputSchema: { type: 'object', properties: { spreadsheetId: { type: 'string' }, rules: { type: 'array', description: 'Array of conditional format rules', items: { type: 'object', properties: { ranges: { type: 'array', items: { type: 'string' } }, booleanRule: { type: 'object', properties: { condition: { type: 'object', properties: { type: { type: 'string' }, values: { type: 'array', items: { type: 'object' } } }, required: ['type'] }, format: { type: 'object' } } }, gradientRule: { type: 'object' } }, required: ['ranges'] } } }, required: ['spreadsheetId', 'rules'] } },
   { name: 'freeze', fn: freezeRowsColumns, description: 'Freeze rows and/or columns in a Google Sheet', inputSchema: { type: 'object', properties: { spreadsheetId: { type: 'string' }, sheetName: { type: 'string', description: 'Tab name (defaults to first sheet)' }, frozenRowCount: { type: 'number', description: 'Number of rows to freeze (0 to unfreeze)' }, frozenColumnCount: { type: 'number', description: 'Number of columns to freeze (0 to unfreeze)' } }, required: ['spreadsheetId'] } },
   { name: 'auto_resize', fn: autoResize, description: 'Auto-resize columns or rows to fit their content', inputSchema: { type: 'object', properties: { spreadsheetId: { type: 'string' }, sheetName: { type: 'string' }, dimension: { type: 'string', enum: ['COLUMNS', 'ROWS'], description: 'Default: COLUMNS' }, startIndex: { description: 'Start column letter (e.g. "A") or 0-based row index' }, endIndex: { description: 'End column letter (e.g. "D") or 0-based row index (inclusive)' } }, required: ['spreadsheetId'] } },
+  { name: 'update_borders', fn: updateBorders, description: 'Update borders on a range of cells. Each side (top, bottom, left, right, innerHorizontal, innerVertical) is optional with style, width, and color.', inputSchema: { type: 'object', properties: { spreadsheetId: { type: 'string' }, range: { type: 'string', description: 'A1 range, e.g. Sheet1!A1:D10' }, top: { type: 'object', properties: { style: { type: 'string', enum: ['SOLID', 'DASHED', 'DOTTED', 'SOLID_MEDIUM', 'SOLID_THICK', 'DOUBLE', 'NONE'] }, width: { type: 'number' }, color: { type: 'object', description: 'RGBA object' } } }, bottom: { type: 'object', properties: { style: { type: 'string', enum: ['SOLID', 'DASHED', 'DOTTED', 'SOLID_MEDIUM', 'SOLID_THICK', 'DOUBLE', 'NONE'] }, width: { type: 'number' }, color: { type: 'object' } } }, left: { type: 'object', properties: { style: { type: 'string', enum: ['SOLID', 'DASHED', 'DOTTED', 'SOLID_MEDIUM', 'SOLID_THICK', 'DOUBLE', 'NONE'] }, width: { type: 'number' }, color: { type: 'object' } } }, right: { type: 'object', properties: { style: { type: 'string', enum: ['SOLID', 'DASHED', 'DOTTED', 'SOLID_MEDIUM', 'SOLID_THICK', 'DOUBLE', 'NONE'] }, width: { type: 'number' }, color: { type: 'object' } } }, innerHorizontal: { type: 'object', properties: { style: { type: 'string', enum: ['SOLID', 'DASHED', 'DOTTED', 'SOLID_MEDIUM', 'SOLID_THICK', 'DOUBLE', 'NONE'] }, width: { type: 'number' }, color: { type: 'object' } } }, innerVertical: { type: 'object', properties: { style: { type: 'string', enum: ['SOLID', 'DASHED', 'DOTTED', 'SOLID_MEDIUM', 'SOLID_THICK', 'DOUBLE', 'NONE'] }, width: { type: 'number' }, color: { type: 'object' } } } }, required: ['spreadsheetId', 'range'] } },
+  { name: 'add_banding', fn: addBanding, description: 'Add alternating row color banding to a range', inputSchema: { type: 'object', properties: { spreadsheetId: { type: 'string' }, range: { type: 'string', description: 'A1 range, e.g. Sheet1!A1:D20' }, headerColor: { type: 'object', description: 'RGBA color for the header row' }, firstBandColor: { type: 'object', description: 'RGBA color for odd rows' }, secondBandColor: { type: 'object', description: 'RGBA color for even rows' }, footerColor: { type: 'object', description: 'RGBA color for the footer row' } }, required: ['spreadsheetId', 'range'] } },
+  { name: 'delete_banding', fn: deleteBanding, description: 'Delete a banded range by its ID', inputSchema: { type: 'object', properties: { spreadsheetId: { type: 'string' }, bandedRangeId: { type: 'number', description: 'Banded range ID (from get_sheet_metadata)' } }, required: ['spreadsheetId', 'bandedRangeId'] } },
+  { name: 'update_banding', fn: updateBanding, description: 'Update colors on an existing banded range', inputSchema: { type: 'object', properties: { spreadsheetId: { type: 'string' }, bandedRangeId: { type: 'number', description: 'Banded range ID' }, headerColor: { type: 'object', description: 'RGBA color for the header row' }, firstBandColor: { type: 'object', description: 'RGBA color for odd rows' }, secondBandColor: { type: 'object', description: 'RGBA color for even rows' }, footerColor: { type: 'object', description: 'RGBA color for the footer row' } }, required: ['spreadsheetId', 'bandedRangeId'] } },
 ];

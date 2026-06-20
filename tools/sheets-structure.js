@@ -1,6 +1,6 @@
 import { google } from 'googleapis';
 import { extractId } from '../google.js';
-import { getSheetId } from '../utils/range-helpers.js';
+import { extractSheetName, getSheetId, parseRange, columnToIndex } from '../utils/range-helpers.js';
 
 function sheets(auth) { return google.sheets({ version: 'v4', auth }); }
 
@@ -94,6 +94,108 @@ export async function updateSheetProperties(auth, { spreadsheetId, sheetId, titl
   return `Updated sheet properties: ${fields.join(', ')}.`;
 }
 
+export async function addProtectedRange(auth, { spreadsheetId, range, description, warningOnly = false }) {
+  const id = extractId(spreadsheetId);
+  const api = sheets(auth);
+  const { sheetName, range: cleanRange } = extractSheetName(range);
+  const sheetId = await getSheetId(api, id, sheetName);
+  const gridRange = parseRange(cleanRange, sheetId);
+
+  const protectedRange = { range: gridRange, warningOnly };
+  if (description) protectedRange.description = description;
+
+  const res = await api.spreadsheets.batchUpdate({
+    spreadsheetId: id,
+    requestBody: { requests: [{ addProtectedRange: { protectedRange } }] },
+  });
+  const prId = res.data.replies?.[0]?.addProtectedRange?.protectedRange?.protectedRangeId;
+  return `Added protected range on ${range} (protectedRangeId=${prId}).`;
+}
+
+export async function updateProtectedRange(auth, { spreadsheetId, protectedRangeId, range, description, warningOnly }) {
+  const id = extractId(spreadsheetId);
+  const api = sheets(auth);
+  const protectedRange = { protectedRangeId };
+  const fields = [];
+
+  if (range) {
+    const { sheetName, range: cleanRange } = extractSheetName(range);
+    const sheetId = await getSheetId(api, id, sheetName);
+    protectedRange.range = parseRange(cleanRange, sheetId);
+    fields.push('range');
+  }
+  if (description !== undefined) { protectedRange.description = description; fields.push('description'); }
+  if (warningOnly !== undefined) { protectedRange.warningOnly = warningOnly; fields.push('warningOnly'); }
+
+  await api.spreadsheets.batchUpdate({
+    spreadsheetId: id,
+    requestBody: { requests: [{ updateProtectedRange: { protectedRange, fields: fields.join(',') } }] },
+  });
+  return `Updated protected range (id=${protectedRangeId}).`;
+}
+
+export async function deleteProtectedRange(auth, { spreadsheetId, protectedRangeId }) {
+  const id = extractId(spreadsheetId);
+  await sheets(auth).spreadsheets.batchUpdate({
+    spreadsheetId: id,
+    requestBody: { requests: [{ deleteProtectedRange: { protectedRangeId } }] },
+  });
+  return `Deleted protected range (id=${protectedRangeId}).`;
+}
+
+export async function moveDimension(auth, { spreadsheetId, sheetName, dimension, sourceStart, sourceEnd, destinationIndex }) {
+  const id = extractId(spreadsheetId);
+  const api = sheets(auth);
+  const sheetId = await getSheetId(api, id, sheetName);
+
+  await api.spreadsheets.batchUpdate({
+    spreadsheetId: id,
+    requestBody: { requests: [{ moveDimension: { source: { sheetId, dimension, startIndex: sourceStart, endIndex: sourceEnd }, destinationIndex } }] },
+  });
+  return `Moved ${dimension.toLowerCase()} ${sourceStart}–${sourceEnd} to index ${destinationIndex}.`;
+}
+
+export async function addDimensionGroup(auth, { spreadsheetId, sheetName, dimension, startIndex, endIndex }) {
+  const id = extractId(spreadsheetId);
+  const api = sheets(auth);
+  const sheetId = await getSheetId(api, id, sheetName);
+
+  await api.spreadsheets.batchUpdate({
+    spreadsheetId: id,
+    requestBody: { requests: [{ addDimensionGroup: { range: { sheetId, dimension, startIndex, endIndex } } }] },
+  });
+  return `Added ${dimension.toLowerCase()} group ${startIndex}–${endIndex}.`;
+}
+
+export async function deleteDimensionGroup(auth, { spreadsheetId, sheetName, dimension, startIndex, endIndex }) {
+  const id = extractId(spreadsheetId);
+  const api = sheets(auth);
+  const sheetId = await getSheetId(api, id, sheetName);
+
+  await api.spreadsheets.batchUpdate({
+    spreadsheetId: id,
+    requestBody: { requests: [{ deleteDimensionGroup: { range: { sheetId, dimension, startIndex, endIndex } } }] },
+  });
+  return `Deleted ${dimension.toLowerCase()} group ${startIndex}–${endIndex}.`;
+}
+
+export async function textToColumns(auth, { spreadsheetId, range, delimiter, delimiterType = 'AUTODETECT' }) {
+  const id = extractId(spreadsheetId);
+  const api = sheets(auth);
+  const { sheetName, range: cleanRange } = extractSheetName(range);
+  const sheetId = await getSheetId(api, id, sheetName);
+  const gridRange = parseRange(cleanRange, sheetId);
+
+  const req = { source: gridRange, delimiterType };
+  if (delimiterType === 'CUSTOM' && delimiter) req.delimiter = delimiter;
+
+  await api.spreadsheets.batchUpdate({
+    spreadsheetId: id,
+    requestBody: { requests: [{ textToColumns: req }] },
+  });
+  return `Split text to columns in ${range} using ${delimiterType}${delimiterType === 'CUSTOM' ? ` ("${delimiter}")` : ''}.`;
+}
+
 // ── Tool definitions ──────────────────────────────────────────────────────────
 
 export const TOOLS = [
@@ -105,4 +207,11 @@ export const TOOLS = [
   { name: 'duplicate_sheet', fn: duplicateSheet, description: 'Duplicate a tab within the same spreadsheet', inputSchema: { type: 'object', properties: { spreadsheetId: { type: 'string' }, sheetId: { type: 'number', description: 'Numeric sheet ID of the tab to duplicate' }, insertSheetIndex: { type: 'number', description: '0-based index where the copy is inserted' }, newSheetName: { type: 'string', description: 'Name for the duplicated tab' } }, required: ['spreadsheetId', 'sheetId'] } },
   { name: 'copy_sheet_to', fn: copySheetTo, description: 'Copy a tab to a different spreadsheet', inputSchema: { type: 'object', properties: { spreadsheetId: { type: 'string', description: 'Source spreadsheet ID or URL' }, sheetId: { type: 'number', description: 'Numeric sheet ID of the tab to copy' }, destinationSpreadsheetId: { type: 'string', description: 'Destination spreadsheet ID or URL' } }, required: ['spreadsheetId', 'sheetId', 'destinationSpreadsheetId'] } },
   { name: 'update_sheet_properties', fn: updateSheetProperties, description: 'Update a sheet tab properties: title, grid size, frozen rows/cols, tab color', inputSchema: { type: 'object', properties: { spreadsheetId: { type: 'string' }, sheetId: { type: 'number', description: 'Numeric sheet ID' }, title: { type: 'string' }, gridProperties: { type: 'object', properties: { rowCount: { type: 'number' }, columnCount: { type: 'number' }, frozenRowCount: { type: 'number' }, frozenColumnCount: { type: 'number' } } }, tabColor: { type: 'object', properties: { red: { type: 'number' }, green: { type: 'number' }, blue: { type: 'number' } }, description: 'RGB values 0.0–1.0' } }, required: ['spreadsheetId', 'sheetId'] } },
+  { name: 'add_protected_range', fn: addProtectedRange, description: 'Protect a range from editing (or show a warning)', inputSchema: { type: 'object', properties: { spreadsheetId: { type: 'string' }, range: { type: 'string', description: 'A1 range, e.g. Sheet1!A1:D10' }, description: { type: 'string', description: 'Description of why the range is protected' }, warningOnly: { type: 'boolean', description: 'If true, show a warning instead of blocking edits (default false)' } }, required: ['spreadsheetId', 'range'] } },
+  { name: 'update_protected_range', fn: updateProtectedRange, description: 'Update an existing protected range', inputSchema: { type: 'object', properties: { spreadsheetId: { type: 'string' }, protectedRangeId: { type: 'number', description: 'Protected range ID' }, range: { type: 'string', description: 'New A1 range' }, description: { type: 'string' }, warningOnly: { type: 'boolean' } }, required: ['spreadsheetId', 'protectedRangeId'] } },
+  { name: 'delete_protected_range', fn: deleteProtectedRange, description: 'Remove protection from a range', inputSchema: { type: 'object', properties: { spreadsheetId: { type: 'string' }, protectedRangeId: { type: 'number', description: 'Protected range ID' } }, required: ['spreadsheetId', 'protectedRangeId'] } },
+  { name: 'move_dimension', fn: moveDimension, description: 'Move rows or columns from one position to another', inputSchema: { type: 'object', properties: { spreadsheetId: { type: 'string' }, sheetName: { type: 'string', description: 'Tab name' }, dimension: { type: 'string', enum: ['ROWS', 'COLUMNS'] }, sourceStart: { type: 'number', description: '0-based start index of source range' }, sourceEnd: { type: 'number', description: '0-based end index (exclusive) of source range' }, destinationIndex: { type: 'number', description: '0-based destination index' } }, required: ['spreadsheetId', 'dimension', 'sourceStart', 'sourceEnd', 'destinationIndex'] } },
+  { name: 'add_dimension_group', fn: addDimensionGroup, description: 'Group rows or columns (creates a collapsible outline)', inputSchema: { type: 'object', properties: { spreadsheetId: { type: 'string' }, sheetName: { type: 'string', description: 'Tab name' }, dimension: { type: 'string', enum: ['ROWS', 'COLUMNS'] }, startIndex: { type: 'number', description: '0-based start index' }, endIndex: { type: 'number', description: '0-based end index (exclusive)' } }, required: ['spreadsheetId', 'dimension', 'startIndex', 'endIndex'] } },
+  { name: 'delete_dimension_group', fn: deleteDimensionGroup, description: 'Remove a row or column group', inputSchema: { type: 'object', properties: { spreadsheetId: { type: 'string' }, sheetName: { type: 'string', description: 'Tab name' }, dimension: { type: 'string', enum: ['ROWS', 'COLUMNS'] }, startIndex: { type: 'number', description: '0-based start index' }, endIndex: { type: 'number', description: '0-based end index (exclusive)' } }, required: ['spreadsheetId', 'dimension', 'startIndex', 'endIndex'] } },
+  { name: 'text_to_columns', fn: textToColumns, description: 'Split a column of text into multiple columns by delimiter', inputSchema: { type: 'object', properties: { spreadsheetId: { type: 'string' }, range: { type: 'string', description: 'A1 range of the source column, e.g. Sheet1!A1:A100' }, delimiterType: { type: 'string', enum: ['COMMA', 'SEMICOLON', 'PERIOD', 'SPACE', 'CUSTOM', 'AUTODETECT'], description: 'Default: AUTODETECT' }, delimiter: { type: 'string', description: 'Custom delimiter character (only used when delimiterType is CUSTOM)' } }, required: ['spreadsheetId', 'range'] } },
 ];
