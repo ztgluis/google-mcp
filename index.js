@@ -2,7 +2,7 @@ import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { getAuth } from './google.js';
-import { searchDrive, trashFile, renameFile, moveFile, copyFile, listFolder, createFolder, getFileMetadata, addComment, listComments, resolveComment, listPermissions, createPermission, updatePermission, deletePermission, updateComment, deleteComment, listReplies, createReply, deleteReply, listRevisions, getRevision, aboutGet, uploadFile, downloadFile } from './tools/drive.js';
+import { searchDrive, trashFile, renameFile, moveFile, copyFile, listFolder, createFolder, getFileMetadata, addComment, listComments, resolveComment, listPermissions, createPermission, updatePermission, deletePermission, updateComment, deleteComment, listReplies, createReply, deleteReply, listRevisions, getRevision, aboutGet, uploadFile, downloadFile, createDocFromMarkdown } from './tools/drive.js';
 import { createDoc, copyDoc, formatDoc, exportDoc, listDocTabs, updateHeaderFooter, insertImage, renameDoc, renameDocTab, readDoc, editDoc, insertTable, modifyTable, updateList, insertPageBreak, createNamedRange, deleteNamedRange, listNamedRanges, updateDocumentStyle, updateNamedStyle, insertSectionBreak, insertDate, insertPerson, insertRichLink, mergeTableCells, unmergeTableCells, formatTable, pinTableHeaderRows, replaceImage, deletePositionedObject, replaceNamedRangeContent, createFootnote, deleteHeader, deleteFooter, addDocumentTab, deleteDocTab, updateSectionStyle, readDocStructure } from './tools/docs.js';
 import { TOOLS as SHEET_TOOLS } from './tools/sheets.js';
 import { TOOLS as FORMAT_TOOLS } from './tools/sheets-format.js';
@@ -484,6 +484,19 @@ const DRIVE_DOC_TOOLS = [
       required: ['fileId'],
     },
   },
+  {
+    name: 'create_doc_from_markdown',
+    description: 'Create a formatted Google Doc from markdown or HTML content. Headings, bold, italic, lists, tables, and links are converted automatically. Pass content as a string or provide a file path.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        content: { type: 'string', description: 'Markdown or HTML string to convert into a Google Doc' },
+        filePath: { type: 'string', description: 'Path to a local .md or .html file (alternative to content)' },
+        title: { type: 'string', description: 'Document title (defaults to filename or "Untitled")' },
+        folderId: { type: 'string', description: 'Optional folder ID to place the doc in' },
+      },
+    },
+  },
   // --- Docs: tables, lists, page breaks, named ranges ---
   {
     name: 'insert_table',
@@ -947,6 +960,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     else if (name === 'delete_doc_tab') result = await deleteDocTab(auth, args);
     else if (name === 'upload_file') result = await uploadFile(auth, args);
     else if (name === 'download_file') result = await downloadFile(auth, args);
+    else if (name === 'create_doc_from_markdown') result = await createDocFromMarkdown(auth, args);
     else if (HANDLERS[name]) result = await HANDLERS[name](auth, args);
     else throw new Error(`Unknown tool: ${name}`);
 

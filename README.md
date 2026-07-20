@@ -40,7 +40,7 @@ Use `-s user` (not `-s project`) so the registration is stored locally in `~/.cl
 
 Restart Claude Code to load the server.
 
-## Tools (130)
+## Tools (131)
 
 ### Drive — Files
 - `search_drive` — search files by name or content
@@ -53,6 +53,7 @@ Restart Claude Code to load the server.
 - `list_folder` — list contents of a folder
 - `upload_file` — upload a local file to Google Drive
 - `download_file` — download a Drive file to local filesystem
+- `create_doc_from_markdown` — create a formatted Google Doc from markdown or HTML (one call)
 - `about` — account info and storage quota
 
 ### Drive — Permissions

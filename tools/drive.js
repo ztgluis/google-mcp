@@ -360,6 +360,42 @@ export async function uploadFile(auth, { localPath, name, mimeType, folderId }) 
   return `Uploaded "${f.name}" (${f.mimeType}, ${f.size} bytes)\n  ID: ${f.id}\n  URL: ${f.webViewLink}`;
 }
 
+export async function createDocFromMarkdown(auth, { content, filePath, title, folderId }) {
+  const drive = google.drive({ version: 'v3', auth });
+  const fs = await import('fs');
+  const path = await import('path');
+  const { Readable } = await import('stream');
+
+  let body, detectedTitle;
+  if (filePath) {
+    body = fs.default.createReadStream(filePath);
+    detectedTitle = path.default.basename(filePath, path.default.extname(filePath));
+  } else if (content) {
+    body = Readable.from(Buffer.from(content, 'utf-8'));
+  } else {
+    throw new Error('Either content or filePath is required.');
+  }
+
+  const docTitle = title || detectedTitle || 'Untitled';
+  const fileMetadata = {
+    name: docTitle,
+    mimeType: 'application/vnd.google-apps.document',
+  };
+  if (folderId) fileMetadata.parents = [folderId];
+
+  const isHtml = content?.trimStart().startsWith('<') || filePath?.endsWith('.html') || filePath?.endsWith('.htm');
+  const mediaMimeType = isHtml ? 'text/html' : 'text/markdown';
+
+  const res = await drive.files.create({
+    requestBody: fileMetadata,
+    media: { mimeType: mediaMimeType, body },
+    fields: 'id, name, webViewLink',
+    supportsAllDrives: true,
+  });
+  const f = res.data;
+  return `Created Google Doc "${f.name}" from ${isHtml ? 'HTML' : 'markdown'}\n  ID: ${f.id}\n  URL: ${f.webViewLink}`;
+}
+
 export async function downloadFile(auth, { fileId, localPath }) {
   const drive = google.drive({ version: 'v3', auth });
   const fs = await import('fs');
