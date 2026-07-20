@@ -40,7 +40,7 @@ Use `-s user` (not `-s project`) so the registration is stored locally in `~/.cl
 
 Restart Claude Code to load the server.
 
-## Tools (110)
+## Tools (130)
 
 ### Drive — Files
 - `search_drive` — search files by name or content
@@ -51,6 +51,8 @@ Restart Claude Code to load the server.
 - `create_folder` — create a new folder
 - `trash_file` — move to trash or permanently delete
 - `list_folder` — list contents of a folder
+- `upload_file` — upload a local file to Google Drive
+- `download_file` — download a Drive file to local filesystem
 - `about` — account info and storage quota
 
 ### Drive — Permissions
@@ -137,9 +139,20 @@ Restart Claude Code to load the server.
 - `find_replace` — find and replace text
 - `sort_range` — sort a range by one or more columns
 - `export_sheet` — export to CSV, TSV, XLSX, PDF, or HTML
-- `read_cell_format` — read cell formatting, borders, validation, notes from a range
+- `read_cell_format` — read cell formatting, borders, validation, notes, hyperlinks, rich text runs
 - `set_data_validation` — set dropdowns, number rules, or custom formulas
+- `clear_data_validation` — clear validation rules from a range
 - `text_to_columns` — split text into columns by delimiter
+- `set_cell_note` — set, update, or clear a note on a cell
+- `set_cell_rich_text` — per-character formatting within a cell (mixed bold/color/links)
+- `copy_paste` — copy a range with paste options (values, format, all, transpose)
+- `cut_paste` — cut and paste a range
+- `auto_fill` — extend a pattern or formula (fill handle)
+- `trim_whitespace` — trim leading/trailing whitespace from cells
+- `update_spreadsheet_properties` — update title, locale, timezone, recalculation
+- `append_dimension` — add empty rows or columns at the end of a sheet
+- `set_dimension_size` — set specific row height or column width in pixels
+- `add_pivot_table` — create a pivot table from a data range
 
 ### Sheets — Formatting
 - `format_cells` — colors, fonts, alignment, number formats, wrap strategy
@@ -157,12 +170,21 @@ Restart Claude Code to load the server.
 - `auto_resize` — auto-fit columns or rows to content
 
 ### Sheets — Objects & Charts
-- `list_sheet_objects` — list all charts, filters, banding, protected ranges, conditional formats
+- `list_sheet_objects` — list all charts (with full specs), filters, banding, protected ranges, named ranges
 - `add_chart` — create a chart (bar, line, pie, column, area, scatter, combo)
+- `update_chart` — update an existing chart (type, data, colors, title, axes)
 - `delete_embedded_object` — delete a chart or embedded object
 - `set_basic_filter` — set auto-filter on a range
 - `clear_basic_filter` — remove auto-filter
 - `add_filter_view` — create a named filter view
+- `update_filter_view` — update filter view (title, range, criteria, sort)
+- `delete_filter_view` — delete a filter view
+- `add_slicer` — add an interactive slicer (filter control)
+
+### Sheets — Named Ranges
+- `add_sheet_named_range` — create a named range (e.g. "SalesData" -> Sheet1!A1:D100)
+- `update_sheet_named_range` — rename or change a named range reference
+- `delete_sheet_named_range` — delete a named range
 
 ### Sheets — Structure
 - `get_sheet_metadata` — title, URL, sheet names, IDs, dimensions, frozen rows/cols

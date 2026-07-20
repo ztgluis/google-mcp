@@ -2,7 +2,7 @@ import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { getAuth } from './google.js';
-import { searchDrive, trashFile, renameFile, moveFile, copyFile, listFolder, createFolder, getFileMetadata, addComment, listComments, resolveComment, listPermissions, createPermission, updatePermission, deletePermission, updateComment, deleteComment, listReplies, createReply, deleteReply, listRevisions, getRevision, aboutGet } from './tools/drive.js';
+import { searchDrive, trashFile, renameFile, moveFile, copyFile, listFolder, createFolder, getFileMetadata, addComment, listComments, resolveComment, listPermissions, createPermission, updatePermission, deletePermission, updateComment, deleteComment, listReplies, createReply, deleteReply, listRevisions, getRevision, aboutGet, uploadFile, downloadFile } from './tools/drive.js';
 import { createDoc, copyDoc, formatDoc, exportDoc, listDocTabs, updateHeaderFooter, insertImage, renameDoc, renameDocTab, readDoc, editDoc, insertTable, modifyTable, updateList, insertPageBreak, createNamedRange, deleteNamedRange, listNamedRanges, updateDocumentStyle, updateNamedStyle, insertSectionBreak, insertDate, insertPerson, insertRichLink, mergeTableCells, unmergeTableCells, formatTable, pinTableHeaderRows, replaceImage, deletePositionedObject, replaceNamedRangeContent, createFootnote, deleteHeader, deleteFooter, addDocumentTab, deleteDocTab, updateSectionStyle, readDocStructure } from './tools/docs.js';
 import { TOOLS as SHEET_TOOLS } from './tools/sheets.js';
 import { TOOLS as FORMAT_TOOLS } from './tools/sheets-format.js';
@@ -457,6 +457,32 @@ const DRIVE_DOC_TOOLS = [
     name: 'about',
     description: 'Get Google Drive account info and storage quota.',
     inputSchema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'upload_file',
+    description: 'Upload a local file to Google Drive.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        localPath: { type: 'string', description: 'Absolute path to the local file to upload' },
+        name: { type: 'string', description: 'Name for the file in Drive (defaults to local filename)' },
+        mimeType: { type: 'string', description: 'MIME type (defaults to application/octet-stream)' },
+        folderId: { type: 'string', description: 'Optional folder ID to upload into' },
+      },
+      required: ['localPath'],
+    },
+  },
+  {
+    name: 'download_file',
+    description: 'Download a file from Google Drive to the local filesystem. For Google Docs/Sheets/Slides, use export_doc or export_sheet instead.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        fileId: { type: 'string', description: 'File ID or URL' },
+        localPath: { type: 'string', description: 'Local path to save to (defaults to current directory with original filename)' },
+      },
+      required: ['fileId'],
+    },
   },
   // --- Docs: tables, lists, page breaks, named ranges ---
   {
@@ -919,6 +945,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     else if (name === 'delete_footer') result = await deleteFooter(auth, args);
     else if (name === 'add_doc_tab') result = await addDocumentTab(auth, args);
     else if (name === 'delete_doc_tab') result = await deleteDocTab(auth, args);
+    else if (name === 'upload_file') result = await uploadFile(auth, args);
+    else if (name === 'download_file') result = await downloadFile(auth, args);
     else if (HANDLERS[name]) result = await HANDLERS[name](auth, args);
     else throw new Error(`Unknown tool: ${name}`);
 

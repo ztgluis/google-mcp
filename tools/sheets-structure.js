@@ -202,7 +202,7 @@ export async function listSheetObjects(auth, { spreadsheetId, sheetName }) {
 
   const res = await api.spreadsheets.get({
     spreadsheetId: id,
-    fields: 'sheets(properties(sheetId,title),charts,conditionalFormats,filterViews,basicFilter,bandedRanges,protectedRanges)',
+    fields: 'sheets(properties(sheetId,title),charts,conditionalFormats,filterViews,basicFilter,bandedRanges,protectedRanges),namedRanges',
   });
 
   const targetSheets = sheetName
@@ -223,10 +223,9 @@ export async function listSheetObjects(auth, { spreadsheetId, sheetName }) {
       for (const chart of charts) {
         const spec = chart.spec || {};
         const title = spec.title || '(untitled)';
-        const chartType = spec.basicChart?.chartType || spec.pieChart ? 'PIE' : spec.histogramChart ? 'HISTOGRAM' : 'unknown';
-        const pos = chart.position?.overlayPosition?.anchorCell;
-        const posStr = pos ? ` at row=${pos.rowIndex},col=${pos.columnIndex}` : '';
-        lines.push(`  chartId=${chart.chartId} | ${chartType} | "${title}"${posStr}`);
+        lines.push(`  chartId=${chart.chartId} | "${title}"`);
+        lines.push(`    spec: ${JSON.stringify(chart.spec, null, 2).split('\n').join('\n    ')}`);
+        if (chart.position) lines.push(`    position: ${JSON.stringify(chart.position)}`);
       }
     }
 
@@ -253,6 +252,10 @@ export async function listSheetObjects(auth, { spreadsheetId, sheetName }) {
       lines.push(`\nFilter views (${fvs.length}):`);
       for (const fv of fvs) {
         lines.push(`  filterViewId=${fv.filterViewId} | "${fv.title || '(untitled)'}"`);
+        if (fv.criteria) lines.push(`    criteria: ${JSON.stringify(fv.criteria)}`);
+        if (fv.sortSpecs) lines.push(`    sortSpecs: ${JSON.stringify(fv.sortSpecs)}`);
+        const r = fv.range || {};
+        if (r.startRowIndex !== undefined) lines.push(`    range: rows ${r.startRowIndex}-${r.endRowIndex}, cols ${r.startColumnIndex}-${r.endColumnIndex}`);
       }
     }
 
@@ -288,7 +291,120 @@ export async function listSheetObjects(auth, { spreadsheetId, sheetName }) {
     }
   }
 
+  const namedRanges = res.data.namedRanges || [];
+  if (namedRanges.length) {
+    lines.push(`\n=== Named Ranges (${namedRanges.length}) ===`);
+    for (const nr of namedRanges) {
+      const r = nr.range || {};
+      const rangeStr = r.startRowIndex !== undefined
+        ? `sheetId=${r.sheetId}, rows ${r.startRowIndex}-${r.endRowIndex}, cols ${r.startColumnIndex}-${r.endColumnIndex}`
+        : JSON.stringify(r);
+      lines.push(`  "${nr.name}" (namedRangeId=${nr.namedRangeId}): ${rangeStr}`);
+    }
+  }
+
   return lines.join('\n');
+}
+
+export async function addSheetNamedRange(auth, { spreadsheetId, name, range }) {
+  const id = extractId(spreadsheetId);
+  const api = sheets(auth);
+  const { sheetName, range: cleanRange } = extractSheetName(range);
+  const sheetId = await getSheetId(api, id, sheetName);
+  const gridRange = parseRange(cleanRange, sheetId);
+
+  const res = await api.spreadsheets.batchUpdate({
+    spreadsheetId: id,
+    requestBody: { requests: [{ addNamedRange: { namedRange: { name, range: gridRange } } }] },
+  });
+  const nrId = res.data.replies?.[0]?.addNamedRange?.namedRange?.namedRangeId;
+  return `Created named range "${name}" (namedRangeId=${nrId}).`;
+}
+
+export async function updateSheetNamedRange(auth, { spreadsheetId, namedRangeId, name, range }) {
+  const id = extractId(spreadsheetId);
+  const api = sheets(auth);
+
+  const namedRange = { namedRangeId };
+  const fields = [];
+  if (name !== undefined) { namedRange.name = name; fields.push('name'); }
+  if (range !== undefined) {
+    const { sheetName, range: cleanRange } = extractSheetName(range);
+    const sheetId = await getSheetId(api, id, sheetName);
+    namedRange.range = parseRange(cleanRange, sheetId);
+    fields.push('range');
+  }
+
+  await api.spreadsheets.batchUpdate({
+    spreadsheetId: id,
+    requestBody: { requests: [{ updateNamedRange: { namedRange, fields: fields.join(',') } }] },
+  });
+  return `Updated named range (namedRangeId=${namedRangeId}).`;
+}
+
+export async function deleteSheetNamedRange(auth, { spreadsheetId, namedRangeId }) {
+  const id = extractId(spreadsheetId);
+  await sheets(auth).spreadsheets.batchUpdate({
+    spreadsheetId: id,
+    requestBody: { requests: [{ deleteNamedRange: { namedRangeId } }] },
+  });
+  return `Deleted named range (namedRangeId=${namedRangeId}).`;
+}
+
+export async function updateFilterView(auth, { spreadsheetId, filterViewId, title, range, sortSpecs, criteria }) {
+  const id = extractId(spreadsheetId);
+  const api = sheets(auth);
+  const filter = { filterViewId };
+  const fields = [];
+
+  if (title !== undefined) { filter.title = title; fields.push('title'); }
+  if (range !== undefined) {
+    const { sheetName, range: cleanRange } = extractSheetName(range);
+    const sheetId = await getSheetId(api, id, sheetName);
+    filter.range = parseRange(cleanRange, sheetId);
+    fields.push('range');
+  }
+  if (sortSpecs !== undefined) { filter.sortSpecs = sortSpecs; fields.push('sortSpecs'); }
+  if (criteria !== undefined) { filter.criteria = criteria; fields.push('criteria'); }
+
+  await api.spreadsheets.batchUpdate({
+    spreadsheetId: id,
+    requestBody: { requests: [{ updateFilterView: { filter, fields: { paths: fields } } }] },
+  });
+  return `Updated filter view (filterViewId=${filterViewId}).`;
+}
+
+export async function deleteFilterView(auth, { spreadsheetId, filterViewId }) {
+  const id = extractId(spreadsheetId);
+  await sheets(auth).spreadsheets.batchUpdate({
+    spreadsheetId: id,
+    requestBody: { requests: [{ deleteFilterView: { filterViewId } }] },
+  });
+  return `Deleted filter view (filterViewId=${filterViewId}).`;
+}
+
+export async function addSlicer(auth, { spreadsheetId, range, filterColumnIndex, title, position }) {
+  const id = extractId(spreadsheetId);
+  const api = sheets(auth);
+  const { sheetName, range: cleanRange } = extractSheetName(range);
+  const sheetId = await getSheetId(api, id, sheetName);
+  const gridRange = parseRange(cleanRange, sheetId);
+
+  const slicer = {
+    spec: { dataRange: gridRange, filterCriteria: {}, columnIndex: filterColumnIndex, title },
+    position: {
+      overlayPosition: {
+        anchorCell: { sheetId, rowIndex: position?.rowIndex || 0, columnIndex: position?.columnIndex || 0 },
+      },
+    },
+  };
+
+  const res = await api.spreadsheets.batchUpdate({
+    spreadsheetId: id,
+    requestBody: { requests: [{ addSlicer: { slicer } }] },
+  });
+  const slicerId = res.data.replies?.[0]?.addSlicer?.slicer?.slicerId;
+  return `Added slicer "${title || ''}" (slicerId=${slicerId}).`;
 }
 
 // ── Tool definitions ──────────────────────────────────────────────────────────
@@ -308,6 +424,12 @@ export const TOOLS = [
   { name: 'move_dimension', fn: moveDimension, description: 'Move rows or columns from one position to another', inputSchema: { type: 'object', properties: { spreadsheetId: { type: 'string' }, sheetName: { type: 'string', description: 'Tab name' }, dimension: { type: 'string', enum: ['ROWS', 'COLUMNS'] }, sourceStart: { type: 'number', description: '0-based start index of source range' }, sourceEnd: { type: 'number', description: '0-based end index (exclusive) of source range' }, destinationIndex: { type: 'number', description: '0-based destination index' } }, required: ['spreadsheetId', 'dimension', 'sourceStart', 'sourceEnd', 'destinationIndex'] } },
   { name: 'add_dimension_group', fn: addDimensionGroup, description: 'Group rows or columns (creates a collapsible outline)', inputSchema: { type: 'object', properties: { spreadsheetId: { type: 'string' }, sheetName: { type: 'string', description: 'Tab name' }, dimension: { type: 'string', enum: ['ROWS', 'COLUMNS'] }, startIndex: { type: 'number', description: '0-based start index' }, endIndex: { type: 'number', description: '0-based end index (exclusive)' } }, required: ['spreadsheetId', 'dimension', 'startIndex', 'endIndex'] } },
   { name: 'delete_dimension_group', fn: deleteDimensionGroup, description: 'Remove a row or column group', inputSchema: { type: 'object', properties: { spreadsheetId: { type: 'string' }, sheetName: { type: 'string', description: 'Tab name' }, dimension: { type: 'string', enum: ['ROWS', 'COLUMNS'] }, startIndex: { type: 'number', description: '0-based start index' }, endIndex: { type: 'number', description: '0-based end index (exclusive)' } }, required: ['spreadsheetId', 'dimension', 'startIndex', 'endIndex'] } },
-  { name: 'list_sheet_objects', fn: listSheetObjects, description: 'List all objects in a spreadsheet: charts, conditional formats, filter views, basic filters, banded ranges, and protected ranges. Optionally filter to a specific sheet tab.', inputSchema: { type: 'object', properties: { spreadsheetId: { type: 'string' }, sheetName: { type: 'string', description: 'Optional tab name to filter to' } }, required: ['spreadsheetId'] } },
+  { name: 'list_sheet_objects', fn: listSheetObjects, description: 'List all objects in a spreadsheet: charts (with full spec), conditional formats, filter views (with criteria), basic filters, banded ranges, protected ranges, and named ranges. Optionally filter to a specific sheet tab.', inputSchema: { type: 'object', properties: { spreadsheetId: { type: 'string' }, sheetName: { type: 'string', description: 'Optional tab name to filter to' } }, required: ['spreadsheetId'] } },
   { name: 'text_to_columns', fn: textToColumns, description: 'Split a column of text into multiple columns by delimiter', inputSchema: { type: 'object', properties: { spreadsheetId: { type: 'string' }, range: { type: 'string', description: 'A1 range of the source column, e.g. Sheet1!A1:A100' }, delimiterType: { type: 'string', enum: ['COMMA', 'SEMICOLON', 'PERIOD', 'SPACE', 'CUSTOM', 'AUTODETECT'], description: 'Default: AUTODETECT' }, delimiter: { type: 'string', description: 'Custom delimiter character (only used when delimiterType is CUSTOM)' } }, required: ['spreadsheetId', 'range'] } },
+  { name: 'add_sheet_named_range', fn: addSheetNamedRange, description: 'Create a named range in a spreadsheet (e.g. "SalesData" → Sheet1!A1:D100)', inputSchema: { type: 'object', properties: { spreadsheetId: { type: 'string' }, name: { type: 'string', description: 'Name for the range (e.g. SalesData)' }, range: { type: 'string', description: 'A1 range, e.g. Sheet1!A1:D100' } }, required: ['spreadsheetId', 'name', 'range'] } },
+  { name: 'update_sheet_named_range', fn: updateSheetNamedRange, description: 'Update a named range (rename or change its range reference)', inputSchema: { type: 'object', properties: { spreadsheetId: { type: 'string' }, namedRangeId: { type: 'string', description: 'Named range ID (from list_sheet_objects)' }, name: { type: 'string', description: 'New name' }, range: { type: 'string', description: 'New A1 range' } }, required: ['spreadsheetId', 'namedRangeId'] } },
+  { name: 'delete_sheet_named_range', fn: deleteSheetNamedRange, description: 'Delete a named range from a spreadsheet', inputSchema: { type: 'object', properties: { spreadsheetId: { type: 'string' }, namedRangeId: { type: 'string', description: 'Named range ID' } }, required: ['spreadsheetId', 'namedRangeId'] } },
+  { name: 'update_filter_view', fn: updateFilterView, description: 'Update a filter view (title, range, sort specs, filter criteria)', inputSchema: { type: 'object', properties: { spreadsheetId: { type: 'string' }, filterViewId: { type: 'number', description: 'Filter view ID (from list_sheet_objects)' }, title: { type: 'string' }, range: { type: 'string', description: 'New A1 range' }, sortSpecs: { type: 'array', items: { type: 'object' }, description: 'Sort specifications' }, criteria: { type: 'object', description: 'Filter criteria keyed by column index' } }, required: ['spreadsheetId', 'filterViewId'] } },
+  { name: 'delete_filter_view', fn: deleteFilterView, description: 'Delete a filter view', inputSchema: { type: 'object', properties: { spreadsheetId: { type: 'string' }, filterViewId: { type: 'number', description: 'Filter view ID' } }, required: ['spreadsheetId', 'filterViewId'] } },
+  { name: 'add_slicer', fn: addSlicer, description: 'Add an interactive slicer (filter control) to a sheet', inputSchema: { type: 'object', properties: { spreadsheetId: { type: 'string' }, range: { type: 'string', description: 'Data range the slicer filters, e.g. Sheet1!A1:E100' }, filterColumnIndex: { type: 'number', description: '0-based column index within the range to filter on' }, title: { type: 'string', description: 'Slicer title' }, position: { type: 'object', properties: { rowIndex: { type: 'number' }, columnIndex: { type: 'number' } }, description: 'Anchor cell position' } }, required: ['spreadsheetId', 'range', 'filterColumnIndex'] } },
 ];

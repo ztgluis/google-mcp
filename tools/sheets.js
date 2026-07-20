@@ -370,6 +370,219 @@ export async function addFilterView(auth, { spreadsheetId, range, title }) {
   return `Added filter view "${title}" (filterViewId=${fvId}).`;
 }
 
+export async function setCellNote(auth, { spreadsheetId, range, note }) {
+  const id = extractId(spreadsheetId);
+  const api = sheets(auth);
+  const { sheetName, range: cleanRange } = extractSheetName(range);
+  const sheetId = await getSheetId(api, id, sheetName);
+  const gridRange = parseRange(cleanRange, sheetId);
+  await api.spreadsheets.batchUpdate({
+    spreadsheetId: id,
+    requestBody: { requests: [{ repeatCell: { range: gridRange, cell: { note: note || '' }, fields: 'note' } }] },
+  });
+  return note ? `Set note on ${range}.` : `Cleared note on ${range}.`;
+}
+
+export async function setCellRichText(auth, { spreadsheetId, range, text, runs }) {
+  const id = extractId(spreadsheetId);
+  const api = sheets(auth);
+  const { sheetName, range: cleanRange } = extractSheetName(range);
+  const sheetId = await getSheetId(api, id, sheetName);
+  const gridRange = parseRange(cleanRange, sheetId);
+
+  const cellData = { userEnteredValue: { stringValue: text } };
+  if (runs?.length) {
+    cellData.textFormatRuns = runs.map(r => {
+      const run = { startIndex: r.startIndex };
+      if (r.format) run.format = r.format;
+      return run;
+    });
+  }
+
+  await api.spreadsheets.batchUpdate({
+    spreadsheetId: id,
+    requestBody: { requests: [{ updateCells: { rows: [{ values: [cellData] }], range: gridRange, fields: 'userEnteredValue,textFormatRuns' } }] },
+  });
+  return `Set rich text on ${range}.`;
+}
+
+export async function updateChart(auth, { spreadsheetId, chartId, spec }) {
+  const id = extractId(spreadsheetId);
+  await sheets(auth).spreadsheets.batchUpdate({
+    spreadsheetId: id,
+    requestBody: { requests: [{ updateChartSpec: { chartId, spec } }] },
+  });
+  return `Updated chart (chartId=${chartId}).`;
+}
+
+export async function copyPaste(auth, { spreadsheetId, source, destination, pasteType = 'PASTE_NORMAL', pasteOrientation = 'NORMAL' }) {
+  const id = extractId(spreadsheetId);
+  const api = sheets(auth);
+  const src = extractSheetName(source);
+  const srcSheetId = await getSheetId(api, id, src.sheetName);
+  const srcRange = parseRange(src.range, srcSheetId);
+  const dst = extractSheetName(destination);
+  const dstSheetId = await getSheetId(api, id, dst.sheetName);
+  const dstRange = parseRange(dst.range, dstSheetId);
+
+  await api.spreadsheets.batchUpdate({
+    spreadsheetId: id,
+    requestBody: { requests: [{ copyPaste: { source: srcRange, destination: dstRange, pasteType, pasteOrientation } }] },
+  });
+  return `Copied ${source} to ${destination} (${pasteType}).`;
+}
+
+export async function cutPaste(auth, { spreadsheetId, source, destination, pasteType = 'PASTE_NORMAL' }) {
+  const id = extractId(spreadsheetId);
+  const api = sheets(auth);
+  const src = extractSheetName(source);
+  const srcSheetId = await getSheetId(api, id, src.sheetName);
+  const srcRange = parseRange(src.range, srcSheetId);
+  const dst = extractSheetName(destination);
+  const dstSheetId = await getSheetId(api, id, dst.sheetName);
+  const dstCoord = parseRange(dst.range, dstSheetId);
+
+  await api.spreadsheets.batchUpdate({
+    spreadsheetId: id,
+    requestBody: { requests: [{ cutPaste: { source: srcRange, destination: { sheetId: dstCoord.sheetId, rowIndex: dstCoord.startRowIndex, columnIndex: dstCoord.startColumnIndex }, pasteType } }] },
+  });
+  return `Cut ${source} and pasted to ${destination} (${pasteType}).`;
+}
+
+export async function autoFill(auth, { spreadsheetId, source, destination, useAlternateSeries = false }) {
+  const id = extractId(spreadsheetId);
+  const api = sheets(auth);
+  const src = extractSheetName(source);
+  const srcSheetId = await getSheetId(api, id, src.sheetName);
+  const srcRange = parseRange(src.range, srcSheetId);
+  const dst = extractSheetName(destination);
+  const dstRange = parseRange(dst.range, srcSheetId);
+
+  await api.spreadsheets.batchUpdate({
+    spreadsheetId: id,
+    requestBody: { requests: [{ autoFill: { useAlternateSeries, range: dstRange, sourceAndDestination: { source: srcRange, dimension: 'ROWS', fillLength: (dstRange.endRowIndex || 0) - (srcRange.endRowIndex || 0) } } }] },
+  });
+  return `Auto-filled from ${source} to ${destination}.`;
+}
+
+export async function trimWhitespace(auth, { spreadsheetId, range }) {
+  const id = extractId(spreadsheetId);
+  const api = sheets(auth);
+  const { sheetName, range: cleanRange } = extractSheetName(range);
+  const sheetId = await getSheetId(api, id, sheetName);
+  const gridRange = parseRange(cleanRange, sheetId);
+
+  await api.spreadsheets.batchUpdate({
+    spreadsheetId: id,
+    requestBody: { requests: [{ trimWhitespace: { range: gridRange } }] },
+  });
+  return `Trimmed whitespace in ${range}.`;
+}
+
+export async function clearDataValidation(auth, { spreadsheetId, range }) {
+  const id = extractId(spreadsheetId);
+  const api = sheets(auth);
+  const { sheetName, range: cleanRange } = extractSheetName(range);
+  const sheetId = await getSheetId(api, id, sheetName);
+  const gridRange = parseRange(cleanRange, sheetId);
+
+  await api.spreadsheets.batchUpdate({
+    spreadsheetId: id,
+    requestBody: { requests: [{ repeatCell: { range: gridRange, cell: { dataValidation: null }, fields: 'dataValidation' } }] },
+  });
+  return `Cleared data validation on ${range}.`;
+}
+
+export async function updateSpreadsheetProperties(auth, { spreadsheetId, title, locale, autoRecalc, timeZone }) {
+  const id = extractId(spreadsheetId);
+  const properties = {};
+  const fields = [];
+  if (title !== undefined) { properties.title = title; fields.push('title'); }
+  if (locale !== undefined) { properties.locale = locale; fields.push('locale'); }
+  if (autoRecalc !== undefined) { properties.autoRecalc = autoRecalc; fields.push('autoRecalc'); }
+  if (timeZone !== undefined) { properties.timeZone = timeZone; fields.push('timeZone'); }
+
+  if (!fields.length) return 'No properties to update.';
+
+  await sheets(auth).spreadsheets.batchUpdate({
+    spreadsheetId: id,
+    requestBody: { requests: [{ updateSpreadsheetProperties: { properties, fields: fields.join(',') } }] },
+  });
+  return `Updated spreadsheet properties: ${fields.join(', ')}.`;
+}
+
+export async function appendDimension(auth, { spreadsheetId, sheetName, dimension = 'ROWS', length = 1 }) {
+  const id = extractId(spreadsheetId);
+  const api = sheets(auth);
+  const sheetId = await getSheetId(api, id, sheetName);
+
+  await api.spreadsheets.batchUpdate({
+    spreadsheetId: id,
+    requestBody: { requests: [{ appendDimension: { sheetId, dimension, length } }] },
+  });
+  return `Appended ${length} ${dimension.toLowerCase()} to "${sheetName || 'first sheet'}".`;
+}
+
+export async function setDimensionSize(auth, { spreadsheetId, sheetName, dimension = 'ROWS', startIndex, endIndex, pixelSize }) {
+  const id = extractId(spreadsheetId);
+  const api = sheets(auth);
+  const sheetId = await getSheetId(api, id, sheetName);
+
+  if (dimension === 'COLUMNS' && typeof startIndex === 'string') {
+    startIndex = columnToIndex(startIndex);
+    if (typeof endIndex === 'string') endIndex = columnToIndex(endIndex) + 1;
+    else if (endIndex === undefined) endIndex = startIndex + 1;
+  } else {
+    if (endIndex === undefined) endIndex = startIndex + 1;
+  }
+
+  await api.spreadsheets.batchUpdate({
+    spreadsheetId: id,
+    requestBody: { requests: [{ updateDimensionProperties: { range: { sheetId, dimension, startIndex, endIndex }, properties: { pixelSize }, fields: 'pixelSize' } }] },
+  });
+  return `Set ${dimension.toLowerCase()} ${startIndex}-${endIndex - 1} to ${pixelSize}px.`;
+}
+
+export async function addPivotTable(auth, { spreadsheetId, sourceRange, targetCell, rows, columns, values, filterCriteria }) {
+  const id = extractId(spreadsheetId);
+  const api = sheets(auth);
+  const src = extractSheetName(sourceRange);
+  const srcSheetId = await getSheetId(api, id, src.sheetName);
+  const srcRange = parseRange(src.range, srcSheetId);
+
+  const tgt = extractSheetName(targetCell);
+  const tgtSheetId = await getSheetId(api, id, tgt.sheetName);
+  const tgtRange = parseRange(tgt.range, tgtSheetId);
+
+  const pivotTable = {
+    source: srcRange,
+    rows: (rows || []).map(r => ({
+      sourceColumnOffset: r.sourceColumnOffset,
+      showTotals: r.showTotals !== false,
+      sortOrder: r.sortOrder || 'ASCENDING',
+      ...(r.label ? { label: r.label } : {}),
+    })),
+    columns: (columns || []).map(c => ({
+      sourceColumnOffset: c.sourceColumnOffset,
+      showTotals: c.showTotals !== false,
+      sortOrder: c.sortOrder || 'ASCENDING',
+      ...(c.label ? { label: c.label } : {}),
+    })),
+    values: (values || []).map(v => ({
+      sourceColumnOffset: v.sourceColumnOffset,
+      summarizeFunction: v.summarizeFunction || 'SUM',
+      ...(v.name ? { name: v.name } : {}),
+    })),
+    ...(filterCriteria ? { criteria: filterCriteria } : {}),
+  };
+
+  await api.spreadsheets.batchUpdate({
+    spreadsheetId: id,
+    requestBody: { requests: [{ updateCells: { rows: [{ values: [{ pivotTable }] }], start: { sheetId: tgtRange.sheetId, rowIndex: tgtRange.startRowIndex, columnIndex: tgtRange.startColumnIndex }, fields: 'pivotTable' } }] },
+  });
+  return `Created pivot table at ${targetCell} from ${sourceRange}.`;
+}
+
 // ── Tool definitions ──────────────────────────────────────────────────────────
 
 export const TOOLS = [
@@ -392,4 +605,16 @@ export const TOOLS = [
   { name: 'set_basic_filter', fn: setBasicFilter, description: 'Set a basic filter (auto-filter) on a range', inputSchema: { type: 'object', properties: { spreadsheetId: { type: 'string' }, range: { type: 'string', description: 'A1 range, e.g. Sheet1!A1:D100' } }, required: ['spreadsheetId', 'range'] } },
   { name: 'clear_basic_filter', fn: clearBasicFilter, description: 'Clear the basic filter from a sheet', inputSchema: { type: 'object', properties: { spreadsheetId: { type: 'string' }, sheetName: { type: 'string', description: 'Tab name (defaults to first sheet)' } }, required: ['spreadsheetId'] } },
   { name: 'add_filter_view', fn: addFilterView, description: 'Add a named filter view to a range', inputSchema: { type: 'object', properties: { spreadsheetId: { type: 'string' }, range: { type: 'string', description: 'A1 range, e.g. Sheet1!A1:D100' }, title: { type: 'string', description: 'Name for the filter view' } }, required: ['spreadsheetId', 'range', 'title'] } },
+  { name: 'set_cell_note', fn: setCellNote, description: 'Set, update, or clear a note on a cell or range', inputSchema: { type: 'object', properties: { spreadsheetId: { type: 'string' }, range: { type: 'string', description: 'A1 range, e.g. Sheet1!B5' }, note: { type: 'string', description: 'Note text (empty string to clear)' } }, required: ['spreadsheetId', 'range'] } },
+  { name: 'set_cell_rich_text', fn: setCellRichText, description: 'Set rich text with per-character formatting in a cell (e.g. part bold, part colored)', inputSchema: { type: 'object', properties: { spreadsheetId: { type: 'string' }, range: { type: 'string', description: 'Single cell A1 reference, e.g. Sheet1!B5' }, text: { type: 'string', description: 'The full cell text' }, runs: { type: 'array', description: 'Array of format runs, each with startIndex and format', items: { type: 'object', properties: { startIndex: { type: 'number', description: '0-based character index where this format starts' }, format: { type: 'object', description: 'Text format: bold, italic, underline, strikethrough, fontSize, fontFamily, foregroundColor, link' } }, required: ['startIndex'] } } }, required: ['spreadsheetId', 'range', 'text', 'runs'] } },
+  { name: 'update_chart', fn: updateChart, description: 'Update an existing chart spec (title, chart type, data ranges, series, axes, colors)', inputSchema: { type: 'object', properties: { spreadsheetId: { type: 'string' }, chartId: { type: 'number', description: 'Chart ID (from list_sheet_objects)' }, spec: { type: 'object', description: 'Full chart spec object with basicChart, title, etc. Use list_sheet_objects to read the current spec first.' } }, required: ['spreadsheetId', 'chartId', 'spec'] } },
+  { name: 'copy_paste', fn: copyPaste, description: 'Copy a range to another location with formatting options (paste values only, formatting only, etc.)', inputSchema: { type: 'object', properties: { spreadsheetId: { type: 'string' }, source: { type: 'string', description: 'Source A1 range, e.g. Sheet1!A1:D10' }, destination: { type: 'string', description: 'Destination A1 range, e.g. Sheet1!F1:I10' }, pasteType: { type: 'string', enum: ['PASTE_NORMAL', 'PASTE_VALUES', 'PASTE_FORMAT', 'PASTE_NO_BORDERS', 'PASTE_FORMULA', 'PASTE_DATA_VALIDATION', 'PASTE_CONDITIONAL_FORMATTING'], description: 'Default: PASTE_NORMAL (everything)' }, pasteOrientation: { type: 'string', enum: ['NORMAL', 'TRANSPOSE'], description: 'Default: NORMAL' } }, required: ['spreadsheetId', 'source', 'destination'] } },
+  { name: 'cut_paste', fn: cutPaste, description: 'Cut a range and paste to a new location (moves data and formatting)', inputSchema: { type: 'object', properties: { spreadsheetId: { type: 'string' }, source: { type: 'string', description: 'Source A1 range to cut, e.g. Sheet1!A1:D10' }, destination: { type: 'string', description: 'Destination anchor cell, e.g. Sheet1!F1' }, pasteType: { type: 'string', enum: ['PASTE_NORMAL', 'PASTE_VALUES', 'PASTE_FORMAT', 'PASTE_NO_BORDERS', 'PASTE_FORMULA', 'PASTE_DATA_VALIDATION', 'PASTE_CONDITIONAL_FORMATTING'], description: 'Default: PASTE_NORMAL' } }, required: ['spreadsheetId', 'source', 'destination'] } },
+  { name: 'auto_fill', fn: autoFill, description: 'Auto-fill a range by extending a pattern or formula (like dragging the fill handle)', inputSchema: { type: 'object', properties: { spreadsheetId: { type: 'string' }, source: { type: 'string', description: 'Source range containing the pattern, e.g. Sheet1!A1:A3' }, destination: { type: 'string', description: 'Full range to fill into (must include source), e.g. Sheet1!A1:A20' }, useAlternateSeries: { type: 'boolean', description: 'Use alternate series (e.g. 1,3,5 instead of 1,2,3). Default: false' } }, required: ['spreadsheetId', 'source', 'destination'] } },
+  { name: 'trim_whitespace', fn: trimWhitespace, description: 'Trim leading and trailing whitespace from all cells in a range', inputSchema: { type: 'object', properties: { spreadsheetId: { type: 'string' }, range: { type: 'string', description: 'A1 range, e.g. Sheet1!A1:D100' } }, required: ['spreadsheetId', 'range'] } },
+  { name: 'clear_data_validation', fn: clearDataValidation, description: 'Clear data validation rules from a range', inputSchema: { type: 'object', properties: { spreadsheetId: { type: 'string' }, range: { type: 'string', description: 'A1 range, e.g. Sheet1!B2:B100' } }, required: ['spreadsheetId', 'range'] } },
+  { name: 'update_spreadsheet_properties', fn: updateSpreadsheetProperties, description: 'Update spreadsheet-level properties (title, locale, timezone, recalculation)', inputSchema: { type: 'object', properties: { spreadsheetId: { type: 'string' }, title: { type: 'string', description: 'New spreadsheet title' }, locale: { type: 'string', description: 'Locale (e.g. en_US)' }, autoRecalc: { type: 'string', enum: ['ON_CHANGE', 'MINUTE', 'HOUR'], description: 'Recalculation interval' }, timeZone: { type: 'string', description: 'Timezone (e.g. America/New_York)' } }, required: ['spreadsheetId'] } },
+  { name: 'append_dimension', fn: appendDimension, description: 'Append empty rows or columns at the end of a sheet', inputSchema: { type: 'object', properties: { spreadsheetId: { type: 'string' }, sheetName: { type: 'string', description: 'Tab name (defaults to first sheet)' }, dimension: { type: 'string', enum: ['ROWS', 'COLUMNS'], description: 'Default: ROWS' }, length: { type: 'number', description: 'Number of rows/columns to add (default: 1)' } }, required: ['spreadsheetId'] } },
+  { name: 'set_dimension_size', fn: setDimensionSize, description: 'Set specific row height or column width in pixels', inputSchema: { type: 'object', properties: { spreadsheetId: { type: 'string' }, sheetName: { type: 'string', description: 'Tab name (defaults to first sheet)' }, dimension: { type: 'string', enum: ['ROWS', 'COLUMNS'], description: 'Default: ROWS' }, startIndex: { description: '0-based row index or column letter (e.g. "A")' }, endIndex: { description: '0-based end index (exclusive) or column letter. Defaults to startIndex + 1 (single row/col).' }, pixelSize: { type: 'number', description: 'Size in pixels' } }, required: ['spreadsheetId', 'startIndex', 'pixelSize'] } },
+  { name: 'add_pivot_table', fn: addPivotTable, description: 'Create a pivot table from a data range', inputSchema: { type: 'object', properties: { spreadsheetId: { type: 'string' }, sourceRange: { type: 'string', description: 'A1 range of the source data, e.g. Sheet1!A1:E100' }, targetCell: { type: 'string', description: 'Cell where the pivot table is placed, e.g. Sheet2!A1' }, rows: { type: 'array', description: 'Row grouping fields', items: { type: 'object', properties: { sourceColumnOffset: { type: 'number', description: '0-based column offset in the source range' }, showTotals: { type: 'boolean' }, sortOrder: { type: 'string', enum: ['ASCENDING', 'DESCENDING'] }, label: { type: 'string' } }, required: ['sourceColumnOffset'] } }, columns: { type: 'array', description: 'Column grouping fields', items: { type: 'object', properties: { sourceColumnOffset: { type: 'number' }, showTotals: { type: 'boolean' }, sortOrder: { type: 'string', enum: ['ASCENDING', 'DESCENDING'] }, label: { type: 'string' } }, required: ['sourceColumnOffset'] } }, values: { type: 'array', description: 'Value aggregation fields', items: { type: 'object', properties: { sourceColumnOffset: { type: 'number' }, summarizeFunction: { type: 'string', enum: ['SUM', 'COUNTA', 'COUNT', 'COUNTUNIQUE', 'AVERAGE', 'MAX', 'MIN', 'MEDIAN', 'PRODUCT', 'STDEV', 'STDEVP', 'VAR', 'VARP', 'CUSTOM'] }, name: { type: 'string', description: 'Display name for this value' } }, required: ['sourceColumnOffset'] } }, filterCriteria: { type: 'object', description: 'Filter criteria keyed by source column offset' } }, required: ['spreadsheetId', 'sourceRange', 'targetCell', 'values'] } },
 ];

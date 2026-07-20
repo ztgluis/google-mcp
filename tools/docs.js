@@ -712,6 +712,25 @@ export async function readDocStructure(auth, { fileId }) {
     }
   }
 
+  // List definitions
+  if (d.lists && Object.keys(d.lists).length) {
+    lines.push('\n--- List definitions ---');
+    for (const [listId, listData] of Object.entries(d.lists)) {
+      const levels = listData.listProperties?.nestingLevels || [];
+      const levelInfo = levels.map((lv, i) => {
+        const parts = [];
+        if (lv.glyphType) parts.push(lv.glyphType);
+        if (lv.glyphSymbol) parts.push(`symbol="${lv.glyphSymbol}"`);
+        if (lv.glyphFormat) parts.push(`format="${lv.glyphFormat}"`);
+        if (lv.indentFirstLine) parts.push(`firstIndent=${lv.indentFirstLine.magnitude}pt`);
+        if (lv.indentStart) parts.push(`indent=${lv.indentStart.magnitude}pt`);
+        if (lv.startNumber !== undefined) parts.push(`start=${lv.startNumber}`);
+        return `L${i}: ${parts.join(', ') || '(default)'}`;
+      }).join('; ');
+      lines.push(`  ${listId}: ${levelInfo || '(no levels)'}`);
+    }
+  }
+
   // Headers & footers
   if (d.headers && Object.keys(d.headers).length) {
     lines.push('\n--- Headers ---');
@@ -725,6 +744,17 @@ export async function readDocStructure(auth, { fileId }) {
     for (const [fId, footer] of Object.entries(d.footers)) {
       const text = (footer.content || []).flatMap(c => (c.paragraph?.elements || []).map(e => e.textRun?.content || '')).join('').trim();
       lines.push(`  ${fId}: "${text}"`);
+    }
+  }
+
+  // Footnotes
+  if (d.footnotes && Object.keys(d.footnotes).length) {
+    lines.push('\n--- Footnotes ---');
+    for (const [fnId, footnote] of Object.entries(d.footnotes)) {
+      const text = (footnote.content || [])
+        .flatMap(c => (c.paragraph?.elements || []).map(e => e.textRun?.content || ''))
+        .join('').trim();
+      lines.push(`  ${fnId}: "${text.substring(0, 200)}"`);
     }
   }
 
@@ -745,8 +775,21 @@ export async function readDocStructure(auth, { fileId }) {
       const props = obj.inlineObjectProperties?.embeddedObject || {};
       const info = [objId];
       if (props.title) info.push(`title="${props.title}"`);
+      if (props.description) info.push(`alt="${props.description}"`);
       if (props.imageProperties?.contentUri) info.push(`uri=${props.imageProperties.contentUri}`);
       if (props.size) info.push(`${props.size.width?.magnitude}x${props.size.height?.magnitude}`);
+      if (props.imageProperties?.cropProperties) {
+        const crop = props.imageProperties.cropProperties;
+        const cropParts = [];
+        if (crop.offsetTop) cropParts.push(`top=${crop.offsetTop}`);
+        if (crop.offsetBottom) cropParts.push(`bottom=${crop.offsetBottom}`);
+        if (crop.offsetLeft) cropParts.push(`left=${crop.offsetLeft}`);
+        if (crop.offsetRight) cropParts.push(`right=${crop.offsetRight}`);
+        if (cropParts.length) info.push(`crop(${cropParts.join(',')})`);
+      }
+      if (props.imageProperties?.brightness) info.push(`brightness=${props.imageProperties.brightness}`);
+      if (props.imageProperties?.contrast) info.push(`contrast=${props.imageProperties.contrast}`);
+      if (props.imageProperties?.transparency) info.push(`transparency=${props.imageProperties.transparency}`);
       lines.push(`  ${info.join(' | ')}`);
     }
   }

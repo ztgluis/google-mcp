@@ -335,3 +335,52 @@ export async function aboutGet(auth) {
   }
   return lines.join('\n');
 }
+
+export async function uploadFile(auth, { localPath, name, mimeType, folderId }) {
+  const drive = google.drive({ version: 'v3', auth });
+  const fs = await import('fs');
+  const path = await import('path');
+
+  const fileName = name || path.default.basename(localPath);
+  const fileMetadata = { name: fileName };
+  if (folderId) fileMetadata.parents = [folderId];
+
+  const media = {
+    mimeType: mimeType || 'application/octet-stream',
+    body: fs.default.createReadStream(localPath),
+  };
+
+  const res = await drive.files.create({
+    requestBody: fileMetadata,
+    media,
+    fields: 'id, name, mimeType, size, webViewLink',
+    supportsAllDrives: true,
+  });
+  const f = res.data;
+  return `Uploaded "${f.name}" (${f.mimeType}, ${f.size} bytes)\n  ID: ${f.id}\n  URL: ${f.webViewLink}`;
+}
+
+export async function downloadFile(auth, { fileId, localPath }) {
+  const drive = google.drive({ version: 'v3', auth });
+  const fs = await import('fs');
+  const path = await import('path');
+  const id = extractId(fileId);
+
+  const meta = await drive.files.get({ fileId: id, fields: 'name,mimeType', supportsAllDrives: true });
+  const fileName = meta.data.name;
+  const destPath = localPath || path.default.join(process.cwd(), fileName);
+
+  const res = await drive.files.get(
+    { fileId: id, alt: 'media', supportsAllDrives: true },
+    { responseType: 'stream' }
+  );
+
+  const dest = fs.default.createWriteStream(destPath);
+  await new Promise((resolve, reject) => {
+    res.data.pipe(dest);
+    dest.on('finish', resolve);
+    dest.on('error', reject);
+  });
+
+  return `Downloaded "${fileName}" to ${destPath}`;
+}

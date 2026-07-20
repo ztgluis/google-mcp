@@ -478,7 +478,7 @@ export async function readCellFormat(auth, { spreadsheetId, range }) {
     spreadsheetId: id,
     ranges: [range],
     includeGridData: true,
-    fields: 'sheets(properties(sheetId,title),merges,data(startRow,startColumn,rowMetadata.pixelSize,columnMetadata.pixelSize,rowData.values(userEnteredFormat,effectiveFormat,dataValidation,note,userEnteredValue)))',
+    fields: 'sheets(properties(sheetId,title),merges,data(startRow,startColumn,rowMetadata.pixelSize,columnMetadata.pixelSize,rowData.values(userEnteredFormat,effectiveFormat,dataValidation,note,userEnteredValue,textFormatRuns,hyperlink)))',
   });
 
   const sheet = res.data.sheets?.[0];
@@ -555,6 +555,30 @@ export async function readCellFormat(auth, { spreadsheetId, range }) {
       }
 
       if (note) cellLines.push(`  note: "${note.substring(0, 80)}"`);
+
+      const hyperlink = cell.hyperlink;
+      if (hyperlink) cellLines.push(`  hyperlink: ${hyperlink}`);
+
+      const runs = cell.textFormatRuns;
+      if (runs?.length) {
+        cellLines.push(`  richText (${runs.length} runs):`);
+        for (const run of runs) {
+          const fmt = run.format || {};
+          const parts = [];
+          if (fmt.bold) parts.push('bold');
+          if (fmt.italic) parts.push('italic');
+          if (fmt.underline) parts.push('underline');
+          if (fmt.strikethrough) parts.push('strikethrough');
+          if (fmt.fontSize) parts.push(`${fmt.fontSize}pt`);
+          if (fmt.fontFamily) parts.push(fmt.fontFamily);
+          if (fmt.foregroundColorStyle?.rgbColor || fmt.foregroundColor?.red !== undefined) {
+            const c = fmt.foregroundColorStyle?.rgbColor || fmt.foregroundColor || {};
+            parts.push(`color(${c.red || 0},${c.green || 0},${c.blue || 0})`);
+          }
+          if (fmt.link?.uri) parts.push(`link=${fmt.link.uri}`);
+          cellLines.push(`    [${run.startIndex}+] ${parts.join(', ') || '(default)'}`);
+        }
+      }
 
       lines.push(cellLines.join('\n'));
     }
