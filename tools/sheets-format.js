@@ -271,6 +271,47 @@ function formatBorder(b) {
   return parts.join(' ');
 }
 
+function formatCellDetails(fmt, label) {
+  if (!fmt) return [];
+  const parts = [];
+  if (fmt.numberFormat) parts.push(`numFmt=${fmt.numberFormat.type}${fmt.numberFormat.pattern ? '(' + fmt.numberFormat.pattern + ')' : ''}`);
+  if (fmt.backgroundColor) parts.push(`bg=${formatColor(fmt.backgroundColor)}`);
+  if (fmt.backgroundColorStyle?.rgbColor) parts.push(`bgStyle=${formatColor(fmt.backgroundColorStyle.rgbColor)}`);
+  if (fmt.textFormat) {
+    const tf = fmt.textFormat;
+    const tParts = [];
+    if (tf.bold) tParts.push('bold');
+    if (tf.italic) tParts.push('italic');
+    if (tf.underline) tParts.push('underline');
+    if (tf.strikethrough) tParts.push('strikethrough');
+    if (tf.fontSize) tParts.push(`${tf.fontSize}pt`);
+    if (tf.fontFamily) tParts.push(tf.fontFamily);
+    if (tf.foregroundColor) tParts.push(`color=${formatColor(tf.foregroundColor)}`);
+    if (tParts.length) parts.push(`text=[${tParts.join(', ')}]`);
+  }
+  if (fmt.horizontalAlignment) parts.push(`hAlign=${fmt.horizontalAlignment}`);
+  if (fmt.verticalAlignment) parts.push(`vAlign=${fmt.verticalAlignment}`);
+  if (fmt.wrapStrategy) parts.push(`wrap=${fmt.wrapStrategy}`);
+  if (fmt.textRotation) {
+    const tr = fmt.textRotation;
+    parts.push(`rotation=${tr.angle || 0}${tr.vertical ? ' vertical' : ''}`);
+  }
+  if (fmt.borders) {
+    const b = fmt.borders;
+    const bParts = [];
+    if (b.top) bParts.push(`top:${formatBorder(b.top)}`);
+    if (b.bottom) bParts.push(`bottom:${formatBorder(b.bottom)}`);
+    if (b.left) bParts.push(`left:${formatBorder(b.left)}`);
+    if (b.right) bParts.push(`right:${formatBorder(b.right)}`);
+    if (bParts.length) parts.push(`borders=[${bParts.join('; ')}]`);
+  }
+  if (fmt.padding) {
+    const pad = fmt.padding;
+    parts.push(`padding=${pad.top || 0},${pad.right || 0},${pad.bottom || 0},${pad.left || 0}`);
+  }
+  return parts.length ? [`${label}: ${parts.join(', ')}`] : [];
+}
+
 export async function readCellFormat(auth, { spreadsheetId, range }) {
   const id = extractId(spreadsheetId);
   const api = sheets(auth);
@@ -281,68 +322,72 @@ export async function readCellFormat(auth, { spreadsheetId, range }) {
     spreadsheetId: id,
     ranges: [range],
     includeGridData: true,
-    fields: 'sheets.data(startRow,startColumn,rowData.values(userEnteredFormat,dataValidation,note,userEnteredValue))',
+    fields: 'sheets(properties(sheetId,title),merges,data(startRow,startColumn,rowMetadata.pixelSize,columnMetadata.pixelSize,rowData.values(userEnteredFormat,effectiveFormat,dataValidation,note,userEnteredValue)))',
   });
 
-  const data = res.data.sheets?.[0]?.data?.[0];
+  const sheet = res.data.sheets?.[0];
+  const data = sheet?.data?.[0];
   if (!data || !data.rowData?.length) return 'No data in range.';
 
   const startRow = data.startRow || 0;
   const startCol = data.startColumn || 0;
   const lines = [];
 
+  // Row heights
+  if (data.rowMetadata?.length) {
+    const heights = data.rowMetadata.map((m, i) => `row ${startRow + i + 1}: ${m.pixelSize}px`);
+    lines.push(`Row heights: ${heights.join(', ')}`);
+  }
+
+  // Column widths
+  if (data.columnMetadata?.length) {
+    const widths = data.columnMetadata.map((m, i) => `${colLetter(startCol + i)}: ${m.pixelSize}px`);
+    lines.push(`Column widths: ${widths.join(', ')}`);
+  }
+
+  // Merges in range
+  const merges = (sheet.merges || []).filter(m =>
+    m.sheetId === sheetId &&
+    m.startRowIndex < startRow + (data.rowData?.length || 0) &&
+    m.endRowIndex > startRow &&
+    m.startColumnIndex < startCol + (data.rowData?.[0]?.values?.length || 0) &&
+    m.endColumnIndex > startCol
+  );
+  if (merges.length) {
+    lines.push(`\nMerged cells:`);
+    for (const m of merges) {
+      lines.push(`  ${colLetter(m.startColumnIndex)}${m.startRowIndex + 1}:${colLetter(m.endColumnIndex - 1)}${m.endRowIndex}`);
+    }
+  }
+
+  lines.push('');
+
+  // Per-cell formatting
   for (let ri = 0; ri < data.rowData.length; ri++) {
     const row = data.rowData[ri];
     if (!row.values) continue;
     for (let ci = 0; ci < row.values.length; ci++) {
       const cell = row.values[ci];
-      const fmt = cell.userEnteredFormat;
+      const uFmt = cell.userEnteredFormat;
+      const eFmt = cell.effectiveFormat;
       const dv = cell.dataValidation;
       const note = cell.note;
       const val = cell.userEnteredValue;
 
-      if (!fmt && !dv && !note) continue;
+      if (!uFmt && !eFmt && !dv && !note) continue;
 
       const cellRef = `${colLetter(startCol + ci)}${startRow + ri + 1}`;
-      const parts = [cellRef];
+      const cellLines = [cellRef];
 
       if (val) {
-        const v = val.stringValue || val.numberValue || val.boolValue || val.formulaValue || '';
-        parts.push(`value="${String(v).substring(0, 50)}"`);
+        const v = val.stringValue ?? val.numberValue ?? val.boolValue ?? val.formulaValue ?? '';
+        cellLines.push(`  value: "${String(v).substring(0, 80)}"`);
       }
 
-      if (fmt) {
-        if (fmt.numberFormat) parts.push(`numFmt=${fmt.numberFormat.type}${fmt.numberFormat.pattern ? '(' + fmt.numberFormat.pattern + ')' : ''}`);
-        if (fmt.backgroundColor) parts.push(`bg=${formatColor(fmt.backgroundColor)}`);
-        if (fmt.textFormat) {
-          const tf = fmt.textFormat;
-          const tParts = [];
-          if (tf.bold) tParts.push('bold');
-          if (tf.italic) tParts.push('italic');
-          if (tf.underline) tParts.push('underline');
-          if (tf.strikethrough) tParts.push('strikethrough');
-          if (tf.fontSize) tParts.push(`${tf.fontSize}pt`);
-          if (tf.fontFamily) tParts.push(tf.fontFamily);
-          if (tf.foregroundColor) tParts.push(`color=${formatColor(tf.foregroundColor)}`);
-          if (tParts.length) parts.push(`text=[${tParts.join(', ')}]`);
-        }
-        if (fmt.horizontalAlignment) parts.push(`hAlign=${fmt.horizontalAlignment}`);
-        if (fmt.verticalAlignment) parts.push(`vAlign=${fmt.verticalAlignment}`);
-        if (fmt.wrapStrategy) parts.push(`wrap=${fmt.wrapStrategy}`);
-        if (fmt.borders) {
-          const b = fmt.borders;
-          const bParts = [];
-          if (b.top) bParts.push(`top:${formatBorder(b.top)}`);
-          if (b.bottom) bParts.push(`bottom:${formatBorder(b.bottom)}`);
-          if (b.left) bParts.push(`left:${formatBorder(b.left)}`);
-          if (b.right) bParts.push(`right:${formatBorder(b.right)}`);
-          if (bParts.length) parts.push(`borders=[${bParts.join('; ')}]`);
-        }
-        if (fmt.padding) {
-          const pad = fmt.padding;
-          parts.push(`padding=${pad.top || 0},${pad.right || 0},${pad.bottom || 0},${pad.left || 0}`);
-        }
-      }
+      const uParts = formatCellDetails(uFmt, 'set');
+      const eParts = formatCellDetails(eFmt, 'effective');
+      if (uParts.length) cellLines.push(`  ${uParts[0]}`);
+      if (eParts.length) cellLines.push(`  ${eParts[0]}`);
 
       if (dv) {
         const cond = dv.condition || {};
@@ -350,16 +395,16 @@ export async function readCellFormat(auth, { spreadsheetId, range }) {
         if (cond.values?.length) dvParts.push(cond.values.map(v => v.userEnteredValue).join(','));
         if (dv.strict) dvParts.push('strict');
         if (dv.inputMessage) dvParts.push(`msg="${dv.inputMessage}"`);
-        parts.push(`validation=[${dvParts.join('; ')}]`);
+        cellLines.push(`  validation: ${dvParts.join('; ')}`);
       }
 
-      if (note) parts.push(`note="${note.substring(0, 60)}"`);
+      if (note) cellLines.push(`  note: "${note.substring(0, 80)}"`);
 
-      lines.push(parts.join(' | '));
+      lines.push(cellLines.join('\n'));
     }
   }
 
-  if (!lines.length) return 'No formatting found in range.';
+  if (lines.every(l => !l.trim())) return 'No formatting found in range.';
   return lines.join('\n');
 }
 
@@ -376,5 +421,5 @@ export const TOOLS = [
   { name: 'add_banding', fn: addBanding, description: 'Add alternating row color banding to a range', inputSchema: { type: 'object', properties: { spreadsheetId: { type: 'string' }, range: { type: 'string', description: 'A1 range, e.g. Sheet1!A1:D20' }, headerColor: { type: 'object', description: 'RGBA color for the header row' }, firstBandColor: { type: 'object', description: 'RGBA color for odd rows' }, secondBandColor: { type: 'object', description: 'RGBA color for even rows' }, footerColor: { type: 'object', description: 'RGBA color for the footer row' } }, required: ['spreadsheetId', 'range'] } },
   { name: 'delete_banding', fn: deleteBanding, description: 'Delete a banded range by its ID', inputSchema: { type: 'object', properties: { spreadsheetId: { type: 'string' }, bandedRangeId: { type: 'number', description: 'Banded range ID (from get_sheet_metadata)' } }, required: ['spreadsheetId', 'bandedRangeId'] } },
   { name: 'update_banding', fn: updateBanding, description: 'Update colors on an existing banded range', inputSchema: { type: 'object', properties: { spreadsheetId: { type: 'string' }, bandedRangeId: { type: 'number', description: 'Banded range ID' }, headerColor: { type: 'object', description: 'RGBA color for the header row' }, firstBandColor: { type: 'object', description: 'RGBA color for odd rows' }, secondBandColor: { type: 'object', description: 'RGBA color for even rows' }, footerColor: { type: 'object', description: 'RGBA color for the footer row' } }, required: ['spreadsheetId', 'bandedRangeId'] } },
-  { name: 'read_cell_format', fn: readCellFormat, description: 'Read cell formatting, data validation, and notes from a range. Returns format details per cell (colors, fonts, borders, number formats, validation rules, notes).', inputSchema: { type: 'object', properties: { spreadsheetId: { type: 'string' }, range: { type: 'string', description: 'A1 range, e.g. Sheet1!A1:D10' } }, required: ['spreadsheetId', 'range'] } },
+  { name: 'read_cell_format', fn: readCellFormat, description: 'Read the complete visual state of cells in a range: both user-set and effective formatting (colors, fonts, borders, number formats, alignment, rotation), row heights, column widths, merged cells, data validation rules, and notes. Use this to understand existing formatting before replicating it.', inputSchema: { type: 'object', properties: { spreadsheetId: { type: 'string' }, range: { type: 'string', description: 'A1 range, e.g. Sheet1!A1:D10' } }, required: ['spreadsheetId', 'range'] } },
 ];
