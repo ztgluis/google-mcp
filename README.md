@@ -40,7 +40,7 @@ Use `-s user` (not `-s project`) so the registration is stored locally in `~/.cl
 
 Restart Claude Code to load the server.
 
-## Tools (107)
+## Tools (110)
 
 ### Drive — Files
 - `search_drive` — search files by name or content
@@ -147,6 +147,9 @@ Restart Claude Code to load the server.
 - `merge_cells` — merge a range
 - `unmerge_cells` — unmerge a range
 - `add_conditional_formatting` — boolean or gradient rules
+- `read_conditional_formats` — read full rule details (conditions, values, formats, gradients)
+- `update_conditional_formatting` — update an existing rule by index
+- `delete_conditional_formatting` — delete a rule by index
 - `add_banding` — alternating row colors
 - `update_banding` — update banding colors
 - `delete_banding` — remove banding

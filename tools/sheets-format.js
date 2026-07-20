@@ -245,6 +245,162 @@ export async function updateBanding(auth, { spreadsheetId, bandedRangeId, header
   return `Updated banded range (id=${bandedRangeId}).`;
 }
 
+function formatGridRange(r) {
+  const parts = [];
+  if (r.startColumnIndex !== undefined && r.endColumnIndex !== undefined) {
+    const sc = String.fromCharCode(65 + r.startColumnIndex);
+    const ec = String.fromCharCode(65 + r.endColumnIndex - 1);
+    parts.push(`${sc}${(r.startRowIndex || 0) + 1}:${ec}${r.endRowIndex || ''}`);
+  } else {
+    if (r.startRowIndex !== undefined) parts.push(`rows ${r.startRowIndex + 1}-${r.endRowIndex}`);
+    if (r.startColumnIndex !== undefined) parts.push(`cols ${r.startColumnIndex}-${r.endColumnIndex}`);
+  }
+  return parts.join(', ') || '(whole sheet)';
+}
+
+function describeCellFormat(fmt) {
+  if (!fmt) return '(none)';
+  const parts = [];
+  if (fmt.backgroundColor) {
+    const c = fmt.backgroundColor;
+    parts.push(`bg(${Math.round((c.red || 0) * 255)},${Math.round((c.green || 0) * 255)},${Math.round((c.blue || 0) * 255)})`);
+  }
+  if (fmt.textFormat) {
+    const tf = fmt.textFormat;
+    if (tf.bold) parts.push('bold');
+    if (tf.italic) parts.push('italic');
+    if (tf.underline) parts.push('underline');
+    if (tf.strikethrough) parts.push('strikethrough');
+    if (tf.foregroundColor) {
+      const c = tf.foregroundColor;
+      parts.push(`color(${Math.round((c.red || 0) * 255)},${Math.round((c.green || 0) * 255)},${Math.round((c.blue || 0) * 255)})`);
+    }
+    if (tf.fontSize) parts.push(`${tf.fontSize}pt`);
+    if (tf.fontFamily) parts.push(tf.fontFamily);
+  }
+  return parts.join(', ') || '(default)';
+}
+
+function describeInterpolationPoint(p) {
+  if (!p) return '?';
+  const parts = [p.type || '?'];
+  if (p.value) parts.push(`val=${p.value}`);
+  if (p.color) {
+    const c = p.color;
+    parts.push(`rgb(${Math.round((c.red || 0) * 255)},${Math.round((c.green || 0) * 255)},${Math.round((c.blue || 0) * 255)})`);
+  }
+  return parts.join(' ');
+}
+
+export async function readConditionalFormats(auth, { spreadsheetId, sheetName }) {
+  const id = extractId(spreadsheetId);
+  const api = sheets(auth);
+
+  const res = await api.spreadsheets.get({
+    spreadsheetId: id,
+    fields: 'sheets(properties(sheetId,title),conditionalFormats)',
+  });
+
+  const targetSheets = sheetName
+    ? (res.data.sheets || []).filter(s => s.properties?.title === sheetName)
+    : res.data.sheets || [];
+
+  if (!targetSheets.length) return sheetName ? `Sheet "${sheetName}" not found.` : 'No sheets found.';
+
+  const lines = [];
+
+  for (const sheet of targetSheets) {
+    const cfs = sheet.conditionalFormats || [];
+    if (!cfs.length) {
+      lines.push(`${sheet.properties.title}: no conditional formats`);
+      continue;
+    }
+
+    lines.push(`=== ${sheet.properties.title} (${cfs.length} rules) ===`);
+
+    for (let i = 0; i < cfs.length; i++) {
+      const cf = cfs[i];
+      const ranges = (cf.ranges || []).map(formatGridRange).join('; ');
+      lines.push(`\n[${i}] Ranges: ${ranges}`);
+
+      if (cf.booleanRule) {
+        const br = cf.booleanRule;
+        const cond = br.condition || {};
+        const condValues = (cond.values || []).map(v => v.userEnteredValue || v.relativeDate || '').join(', ');
+        lines.push(`  Type: boolean`);
+        lines.push(`  Condition: ${cond.type || '?'}${condValues ? ' → ' + condValues : ''}`);
+        lines.push(`  Format: ${describeCellFormat(br.format)}`);
+      } else if (cf.gradientRule) {
+        const gr = cf.gradientRule;
+        lines.push(`  Type: gradient`);
+        lines.push(`  Min: ${describeInterpolationPoint(gr.minpoint)}`);
+        if (gr.midpoint) lines.push(`  Mid: ${describeInterpolationPoint(gr.midpoint)}`);
+        lines.push(`  Max: ${describeInterpolationPoint(gr.maxpoint)}`);
+      }
+    }
+  }
+
+  return lines.join('\n');
+}
+
+export async function updateConditionalFormatting(auth, { spreadsheetId, sheetName, index, rule }) {
+  const id = extractId(spreadsheetId);
+  const api = sheets(auth);
+  const sId = await getSheetId(api, id, sheetName);
+
+  const newRule = {};
+
+  if (rule.ranges) {
+    newRule.ranges = rule.ranges.map(r => {
+      if (typeof r === 'string') {
+        const { range: cleanRange } = extractSheetName(r);
+        return parseRange(cleanRange, sId);
+      }
+      return { ...r, sheetId: sId };
+    });
+  }
+
+  if (rule.booleanRule) {
+    newRule.booleanRule = rule.booleanRule;
+  }
+  if (rule.gradientRule) {
+    newRule.gradientRule = rule.gradientRule;
+  }
+
+  const fields = Object.keys(newRule).join(',');
+
+  await api.spreadsheets.batchUpdate({
+    spreadsheetId: id,
+    requestBody: {
+      requests: [{
+        updateConditionalFormatRule: {
+          index,
+          rule: newRule,
+          sheetId: sId,
+          fields,
+        },
+      }],
+    },
+  });
+  return `Updated conditional format rule at index ${index}.`;
+}
+
+export async function deleteConditionalFormatting(auth, { spreadsheetId, sheetName, index }) {
+  const id = extractId(spreadsheetId);
+  const api = sheets(auth);
+  const sId = await getSheetId(api, id, sheetName);
+
+  await api.spreadsheets.batchUpdate({
+    spreadsheetId: id,
+    requestBody: {
+      requests: [{
+        deleteConditionalFormatRule: { index, sheetId: sId },
+      }],
+    },
+  });
+  return `Deleted conditional format rule at index ${index}.`;
+}
+
 function colLetter(idx) {
   let s = '';
   let i = idx;
@@ -421,5 +577,8 @@ export const TOOLS = [
   { name: 'add_banding', fn: addBanding, description: 'Add alternating row color banding to a range', inputSchema: { type: 'object', properties: { spreadsheetId: { type: 'string' }, range: { type: 'string', description: 'A1 range, e.g. Sheet1!A1:D20' }, headerColor: { type: 'object', description: 'RGBA color for the header row' }, firstBandColor: { type: 'object', description: 'RGBA color for odd rows' }, secondBandColor: { type: 'object', description: 'RGBA color for even rows' }, footerColor: { type: 'object', description: 'RGBA color for the footer row' } }, required: ['spreadsheetId', 'range'] } },
   { name: 'delete_banding', fn: deleteBanding, description: 'Delete a banded range by its ID', inputSchema: { type: 'object', properties: { spreadsheetId: { type: 'string' }, bandedRangeId: { type: 'number', description: 'Banded range ID (from get_sheet_metadata)' } }, required: ['spreadsheetId', 'bandedRangeId'] } },
   { name: 'update_banding', fn: updateBanding, description: 'Update colors on an existing banded range', inputSchema: { type: 'object', properties: { spreadsheetId: { type: 'string' }, bandedRangeId: { type: 'number', description: 'Banded range ID' }, headerColor: { type: 'object', description: 'RGBA color for the header row' }, firstBandColor: { type: 'object', description: 'RGBA color for odd rows' }, secondBandColor: { type: 'object', description: 'RGBA color for even rows' }, footerColor: { type: 'object', description: 'RGBA color for the footer row' } }, required: ['spreadsheetId', 'bandedRangeId'] } },
+  { name: 'read_conditional_formats', fn: readConditionalFormats, description: 'Read full details of all conditional formatting rules on a sheet: condition types, comparison values, applied formats (colors, bold, etc.), gradient color stops, and ranges. Use this to understand or replicate existing rules.', inputSchema: { type: 'object', properties: { spreadsheetId: { type: 'string' }, sheetName: { type: 'string', description: 'Tab name (omit to read all sheets)' } }, required: ['spreadsheetId'] } },
+  { name: 'update_conditional_formatting', fn: updateConditionalFormatting, description: 'Update an existing conditional formatting rule by index. Can change the condition, format, or ranges.', inputSchema: { type: 'object', properties: { spreadsheetId: { type: 'string' }, sheetName: { type: 'string', description: 'Tab name' }, index: { type: 'number', description: 'Rule index (from read_conditional_formats)' }, rule: { type: 'object', description: 'Updated rule properties', properties: { ranges: { type: 'array', items: { type: 'string' }, description: 'A1 ranges' }, booleanRule: { type: 'object', description: '{ condition: { type, values }, format: { backgroundColor, textFormat } }' }, gradientRule: { type: 'object', description: '{ minpoint, midpoint, maxpoint } with { type, value, color }' } } } }, required: ['spreadsheetId', 'sheetName', 'index', 'rule'] } },
+  { name: 'delete_conditional_formatting', fn: deleteConditionalFormatting, description: 'Delete a conditional formatting rule by index.', inputSchema: { type: 'object', properties: { spreadsheetId: { type: 'string' }, sheetName: { type: 'string', description: 'Tab name' }, index: { type: 'number', description: 'Rule index (from read_conditional_formats)' } }, required: ['spreadsheetId', 'sheetName', 'index'] } },
   { name: 'read_cell_format', fn: readCellFormat, description: 'Read the complete visual state of cells in a range: both user-set and effective formatting (colors, fonts, borders, number formats, alignment, rotation), row heights, column widths, merged cells, data validation rules, and notes. Use this to understand existing formatting before replicating it.', inputSchema: { type: 'object', properties: { spreadsheetId: { type: 'string' }, range: { type: 'string', description: 'A1 range, e.g. Sheet1!A1:D10' } }, required: ['spreadsheetId', 'range'] } },
 ];
