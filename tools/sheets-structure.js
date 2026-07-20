@@ -196,6 +196,101 @@ export async function textToColumns(auth, { spreadsheetId, range, delimiter, del
   return `Split text to columns in ${range} using ${delimiterType}${delimiterType === 'CUSTOM' ? ` ("${delimiter}")` : ''}.`;
 }
 
+export async function listSheetObjects(auth, { spreadsheetId, sheetName }) {
+  const id = extractId(spreadsheetId);
+  const api = sheets(auth);
+
+  const res = await api.spreadsheets.get({
+    spreadsheetId: id,
+    fields: 'sheets(properties(sheetId,title),charts,conditionalFormats,filterViews,basicFilter,bandedRanges,protectedRanges)',
+  });
+
+  const targetSheets = sheetName
+    ? (res.data.sheets || []).filter(s => s.properties?.title === sheetName)
+    : res.data.sheets || [];
+
+  if (!targetSheets.length) return sheetName ? `Sheet "${sheetName}" not found.` : 'No sheets found.';
+
+  const lines = [];
+
+  for (const sheet of targetSheets) {
+    lines.push(`=== ${sheet.properties.title} (sheetId=${sheet.properties.sheetId}) ===`);
+
+    // Charts
+    const charts = sheet.charts || [];
+    if (charts.length) {
+      lines.push(`\nCharts (${charts.length}):`);
+      for (const chart of charts) {
+        const spec = chart.spec || {};
+        const title = spec.title || '(untitled)';
+        const chartType = spec.basicChart?.chartType || spec.pieChart ? 'PIE' : spec.histogramChart ? 'HISTOGRAM' : 'unknown';
+        const pos = chart.position?.overlayPosition?.anchorCell;
+        const posStr = pos ? ` at row=${pos.rowIndex},col=${pos.columnIndex}` : '';
+        lines.push(`  chartId=${chart.chartId} | ${chartType} | "${title}"${posStr}`);
+      }
+    }
+
+    // Conditional formats
+    const cfs = sheet.conditionalFormats || [];
+    if (cfs.length) {
+      lines.push(`\nConditional formats (${cfs.length}):`);
+      for (let i = 0; i < cfs.length; i++) {
+        const cf = cfs[i];
+        const ranges = (cf.ranges || []).map(r => {
+          const parts = [];
+          if (r.startRowIndex !== undefined) parts.push(`rows ${r.startRowIndex}-${r.endRowIndex}`);
+          if (r.startColumnIndex !== undefined) parts.push(`cols ${r.startColumnIndex}-${r.endColumnIndex}`);
+          return parts.join(', ');
+        }).join('; ');
+        const type = cf.booleanRule ? `boolean (${cf.booleanRule.condition?.type || '?'})` : cf.gradientRule ? 'gradient' : '?';
+        lines.push(`  [${i}] ${type} | ranges: ${ranges}`);
+      }
+    }
+
+    // Filter views
+    const fvs = sheet.filterViews || [];
+    if (fvs.length) {
+      lines.push(`\nFilter views (${fvs.length}):`);
+      for (const fv of fvs) {
+        lines.push(`  filterViewId=${fv.filterViewId} | "${fv.title || '(untitled)'}"`);
+      }
+    }
+
+    // Basic filter
+    if (sheet.basicFilter) {
+      const bf = sheet.basicFilter;
+      const r = bf.range || {};
+      lines.push(`\nBasic filter: rows ${r.startRowIndex}-${r.endRowIndex}, cols ${r.startColumnIndex}-${r.endColumnIndex}`);
+    }
+
+    // Banded ranges
+    const brs = sheet.bandedRanges || [];
+    if (brs.length) {
+      lines.push(`\nBanded ranges (${brs.length}):`);
+      for (const br of brs) {
+        lines.push(`  bandedRangeId=${br.bandedRangeId}`);
+      }
+    }
+
+    // Protected ranges
+    const prs = sheet.protectedRanges || [];
+    if (prs.length) {
+      lines.push(`\nProtected ranges (${prs.length}):`);
+      for (const pr of prs) {
+        const desc = pr.description ? ` "${pr.description}"` : '';
+        const warn = pr.warningOnly ? ' [warning only]' : ' [locked]';
+        lines.push(`  protectedRangeId=${pr.protectedRangeId}${desc}${warn}`);
+      }
+    }
+
+    if (!charts.length && !cfs.length && !fvs.length && !sheet.basicFilter && !brs.length && !prs.length) {
+      lines.push('  (no objects)');
+    }
+  }
+
+  return lines.join('\n');
+}
+
 // ── Tool definitions ──────────────────────────────────────────────────────────
 
 export const TOOLS = [
@@ -213,5 +308,6 @@ export const TOOLS = [
   { name: 'move_dimension', fn: moveDimension, description: 'Move rows or columns from one position to another', inputSchema: { type: 'object', properties: { spreadsheetId: { type: 'string' }, sheetName: { type: 'string', description: 'Tab name' }, dimension: { type: 'string', enum: ['ROWS', 'COLUMNS'] }, sourceStart: { type: 'number', description: '0-based start index of source range' }, sourceEnd: { type: 'number', description: '0-based end index (exclusive) of source range' }, destinationIndex: { type: 'number', description: '0-based destination index' } }, required: ['spreadsheetId', 'dimension', 'sourceStart', 'sourceEnd', 'destinationIndex'] } },
   { name: 'add_dimension_group', fn: addDimensionGroup, description: 'Group rows or columns (creates a collapsible outline)', inputSchema: { type: 'object', properties: { spreadsheetId: { type: 'string' }, sheetName: { type: 'string', description: 'Tab name' }, dimension: { type: 'string', enum: ['ROWS', 'COLUMNS'] }, startIndex: { type: 'number', description: '0-based start index' }, endIndex: { type: 'number', description: '0-based end index (exclusive)' } }, required: ['spreadsheetId', 'dimension', 'startIndex', 'endIndex'] } },
   { name: 'delete_dimension_group', fn: deleteDimensionGroup, description: 'Remove a row or column group', inputSchema: { type: 'object', properties: { spreadsheetId: { type: 'string' }, sheetName: { type: 'string', description: 'Tab name' }, dimension: { type: 'string', enum: ['ROWS', 'COLUMNS'] }, startIndex: { type: 'number', description: '0-based start index' }, endIndex: { type: 'number', description: '0-based end index (exclusive)' } }, required: ['spreadsheetId', 'dimension', 'startIndex', 'endIndex'] } },
+  { name: 'list_sheet_objects', fn: listSheetObjects, description: 'List all objects in a spreadsheet: charts, conditional formats, filter views, basic filters, banded ranges, and protected ranges. Optionally filter to a specific sheet tab.', inputSchema: { type: 'object', properties: { spreadsheetId: { type: 'string' }, sheetName: { type: 'string', description: 'Optional tab name to filter to' } }, required: ['spreadsheetId'] } },
   { name: 'text_to_columns', fn: textToColumns, description: 'Split a column of text into multiple columns by delimiter', inputSchema: { type: 'object', properties: { spreadsheetId: { type: 'string' }, range: { type: 'string', description: 'A1 range of the source column, e.g. Sheet1!A1:A100' }, delimiterType: { type: 'string', enum: ['COMMA', 'SEMICOLON', 'PERIOD', 'SPACE', 'CUSTOM', 'AUTODETECT'], description: 'Default: AUTODETECT' }, delimiter: { type: 'string', description: 'Custom delimiter character (only used when delimiterType is CUSTOM)' } }, required: ['spreadsheetId', 'range'] } },
 ];

@@ -40,7 +40,7 @@ Use `-s user` (not `-s project`) so the registration is stored locally in `~/.cl
 
 Restart Claude Code to load the server.
 
-## Tools (104)
+## Tools (107)
 
 ### Drive — Files
 - `search_drive` — search files by name or content
@@ -76,6 +76,7 @@ Restart Claude Code to load the server.
 ### Docs — Content
 - `create_doc` — create a new Google Doc
 - `read_doc` — read a Google Doc as plain text / markdown
+- `read_doc_structure` — read full structure with indices, formatting, object IDs, styles
 - `edit_doc` — insert, delete, replace, or append text
 - `copy_doc` — copy a Google Doc
 - `rename_doc` — rename a Google Doc
@@ -136,6 +137,7 @@ Restart Claude Code to load the server.
 - `find_replace` — find and replace text
 - `sort_range` — sort a range by one or more columns
 - `export_sheet` — export to CSV, TSV, XLSX, PDF, or HTML
+- `read_cell_format` — read cell formatting, borders, validation, notes from a range
 - `set_data_validation` — set dropdowns, number rules, or custom formulas
 - `text_to_columns` — split text into columns by delimiter
 
@@ -151,7 +153,8 @@ Restart Claude Code to load the server.
 - `freeze` — freeze rows/columns
 - `auto_resize` — auto-fit columns or rows to content
 
-### Sheets — Charts & Filters
+### Sheets — Objects & Charts
+- `list_sheet_objects` — list all charts, filters, banding, protected ranges, conditional formats
 - `add_chart` — create a chart (bar, line, pie, column, area, scatter, combo)
 - `delete_embedded_object` — delete a chart or embedded object
 - `set_basic_filter` — set auto-filter on a range

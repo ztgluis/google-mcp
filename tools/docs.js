@@ -676,3 +676,159 @@ export async function updateSectionStyle(auth, { fileId, startIndex, endIndex, s
   });
   return `Updated section style: ${fields.join(', ')}.`;
 }
+
+export async function readDocStructure(auth, { fileId }) {
+  const docs = google.docs({ version: 'v1', auth });
+  const id = extractId(fileId);
+  const doc = await docs.documents.get({ documentId: id });
+  const d = doc.data;
+  const lines = [];
+
+  lines.push(`Title: ${d.title}`);
+  lines.push(`Document ID: ${d.documentId}`);
+
+  // Document style
+  const ds = d.documentStyle || {};
+  const margins = ['marginTop', 'marginBottom', 'marginLeft', 'marginRight']
+    .filter(k => ds[k])
+    .map(k => `${k}=${ds[k].magnitude}${ds[k].unit}`)
+    .join(', ');
+  if (margins) lines.push(`Margins: ${margins}`);
+  if (ds.pageSize) lines.push(`Page size: ${ds.pageSize.width?.magnitude}x${ds.pageSize.height?.magnitude} ${ds.pageSize.width?.unit || 'PT'}`);
+  if (ds.defaultHeaderId) lines.push(`Default header ID: ${ds.defaultHeaderId}`);
+  if (ds.defaultFooterId) lines.push(`Default footer ID: ${ds.defaultFooterId}`);
+
+  // Named styles
+  if (d.namedStyles?.styles?.length) {
+    lines.push('\n--- Named styles ---');
+    for (const s of d.namedStyles.styles) {
+      const ts = s.textStyle || {};
+      const parts = [];
+      if (ts.bold) parts.push('bold');
+      if (ts.italic) parts.push('italic');
+      if (ts.fontSize) parts.push(`${ts.fontSize.magnitude}pt`);
+      if (ts.weightedFontFamily) parts.push(ts.weightedFontFamily.fontFamily);
+      lines.push(`  ${s.namedStyleType}: ${parts.join(', ') || '(default)'}`);
+    }
+  }
+
+  // Headers & footers
+  if (d.headers && Object.keys(d.headers).length) {
+    lines.push('\n--- Headers ---');
+    for (const [hId, header] of Object.entries(d.headers)) {
+      const text = (header.content || []).flatMap(c => (c.paragraph?.elements || []).map(e => e.textRun?.content || '')).join('').trim();
+      lines.push(`  ${hId}: "${text}"`);
+    }
+  }
+  if (d.footers && Object.keys(d.footers).length) {
+    lines.push('\n--- Footers ---');
+    for (const [fId, footer] of Object.entries(d.footers)) {
+      const text = (footer.content || []).flatMap(c => (c.paragraph?.elements || []).map(e => e.textRun?.content || '')).join('').trim();
+      lines.push(`  ${fId}: "${text}"`);
+    }
+  }
+
+  // Named ranges
+  if (d.namedRanges && Object.keys(d.namedRanges).length) {
+    lines.push('\n--- Named ranges ---');
+    for (const [name, data] of Object.entries(d.namedRanges)) {
+      const nr = data.namedRanges[0];
+      const rangeInfo = nr.ranges.map(r => `${r.startIndex}-${r.endIndex}`).join(', ');
+      lines.push(`  "${name}" (ID: ${nr.namedRangeId}): ${rangeInfo}`);
+    }
+  }
+
+  // Inline objects
+  if (d.inlineObjects && Object.keys(d.inlineObjects).length) {
+    lines.push('\n--- Inline objects ---');
+    for (const [objId, obj] of Object.entries(d.inlineObjects)) {
+      const props = obj.inlineObjectProperties?.embeddedObject || {};
+      const info = [objId];
+      if (props.title) info.push(`title="${props.title}"`);
+      if (props.imageProperties?.contentUri) info.push(`uri=${props.imageProperties.contentUri}`);
+      if (props.size) info.push(`${props.size.width?.magnitude}x${props.size.height?.magnitude}`);
+      lines.push(`  ${info.join(' | ')}`);
+    }
+  }
+
+  // Positioned objects
+  if (d.positionedObjects && Object.keys(d.positionedObjects).length) {
+    lines.push('\n--- Positioned objects ---');
+    for (const [objId, obj] of Object.entries(d.positionedObjects)) {
+      const props = obj.positionedObjectProperties?.embeddedObject || {};
+      const info = [objId];
+      if (props.title) info.push(`title="${props.title}"`);
+      if (props.imageProperties?.contentUri) info.push(`uri=${props.imageProperties.contentUri}`);
+      lines.push(`  ${info.join(' | ')}`);
+    }
+  }
+
+  // Body content
+  lines.push('\n--- Body content ---');
+  for (const element of d.body?.content || []) {
+    const si = element.startIndex ?? 0;
+    const ei = element.endIndex ?? 0;
+
+    if (element.sectionBreak) {
+      lines.push(`[${si}] SectionBreak (${element.sectionBreak.sectionStyle?.sectionType || 'CONTINUOUS'})`);
+    } else if (element.paragraph) {
+      const p = element.paragraph;
+      const styleName = p.paragraphStyle?.namedStyleType || 'NORMAL_TEXT';
+      const bulletInfo = p.bullet ? ` [list: ${p.bullet.listId}, nesting=${p.bullet.nestingLevel || 0}]` : '';
+      lines.push(`[${si}-${ei}] Paragraph (${styleName})${bulletInfo}`);
+
+      for (const el of p.elements || []) {
+        if (el.textRun) {
+          const tr = el.textRun;
+          const ts = tr.textStyle || {};
+          const attrs = [];
+          if (ts.bold) attrs.push('bold');
+          if (ts.italic) attrs.push('italic');
+          if (ts.underline) attrs.push('underline');
+          if (ts.strikethrough) attrs.push('strikethrough');
+          if (ts.fontSize) attrs.push(`${ts.fontSize.magnitude}pt`);
+          if (ts.weightedFontFamily) attrs.push(ts.weightedFontFamily.fontFamily);
+          if (ts.foregroundColor?.color?.rgbColor) {
+            const c = ts.foregroundColor.color.rgbColor;
+            attrs.push(`color(${c.red || 0},${c.green || 0},${c.blue || 0})`);
+          }
+          if (ts.link?.url) attrs.push(`link=${ts.link.url}`);
+          if (ts.link?.headingId) attrs.push(`headingLink=${ts.link.headingId}`);
+          if (ts.link?.bookmarkId) attrs.push(`bookmarkLink=${ts.link.bookmarkId}`);
+          const content = tr.content.replace(/\n/g, '\\n').substring(0, 80);
+          const attrStr = attrs.length ? ` [${attrs.join(', ')}]` : '';
+          lines.push(`  [${el.startIndex}-${el.endIndex}] TextRun: "${content}"${attrStr}`);
+        } else if (el.inlineObjectElement) {
+          lines.push(`  [${el.startIndex}-${el.endIndex}] InlineObject: ${el.inlineObjectElement.inlineObjectId}`);
+        } else if (el.person) {
+          lines.push(`  [${el.startIndex}-${el.endIndex}] Person: ${el.person.personProperties?.email || '?'}`);
+        } else if (el.richLink) {
+          lines.push(`  [${el.startIndex}-${el.endIndex}] RichLink: ${el.richLink.richLinkProperties?.uri || '?'}`);
+        } else if (el.footnoteReference) {
+          lines.push(`  [${el.startIndex}-${el.endIndex}] FootnoteRef: ${el.footnoteReference.footnoteId}`);
+        } else if (el.pageBreak) {
+          lines.push(`  [${el.startIndex}] PageBreak`);
+        }
+      }
+    } else if (element.table) {
+      const t = element.table;
+      lines.push(`[${si}-${ei}] Table (${t.rows}x${t.columns})`);
+      for (let ri = 0; ri < (t.tableRows || []).length; ri++) {
+        const row = t.tableRows[ri];
+        for (let ci = 0; ci < (row.tableCells || []).length; ci++) {
+          const cell = row.tableCells[ci];
+          const cellSi = cell.startIndex;
+          const cellEi = cell.endIndex;
+          const text = (cell.content || [])
+            .flatMap(c => (c.paragraph?.elements || []).map(e => e.textRun?.content || ''))
+            .join('').trim().substring(0, 50);
+          lines.push(`  [${cellSi}-${cellEi}] Cell[${ri},${ci}]: "${text}"`);
+        }
+      }
+    } else if (element.tableOfContents) {
+      lines.push(`[${si}-${ei}] TableOfContents`);
+    }
+  }
+
+  return lines.join('\n');
+}

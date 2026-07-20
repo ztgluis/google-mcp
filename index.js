@@ -3,7 +3,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { getAuth } from './google.js';
 import { searchDrive, trashFile, renameFile, moveFile, copyFile, listFolder, createFolder, getFileMetadata, addComment, listComments, resolveComment, listPermissions, createPermission, updatePermission, deletePermission, updateComment, deleteComment, listReplies, createReply, deleteReply, listRevisions, getRevision, aboutGet } from './tools/drive.js';
-import { createDoc, copyDoc, formatDoc, exportDoc, listDocTabs, updateHeaderFooter, insertImage, renameDoc, renameDocTab, readDoc, editDoc, insertTable, modifyTable, updateList, insertPageBreak, createNamedRange, deleteNamedRange, listNamedRanges, updateDocumentStyle, updateNamedStyle, insertSectionBreak, insertDate, insertPerson, insertRichLink, mergeTableCells, unmergeTableCells, formatTable, pinTableHeaderRows, replaceImage, deletePositionedObject, replaceNamedRangeContent, createFootnote, deleteHeader, deleteFooter, addDocumentTab, deleteDocTab, updateSectionStyle } from './tools/docs.js';
+import { createDoc, copyDoc, formatDoc, exportDoc, listDocTabs, updateHeaderFooter, insertImage, renameDoc, renameDocTab, readDoc, editDoc, insertTable, modifyTable, updateList, insertPageBreak, createNamedRange, deleteNamedRange, listNamedRanges, updateDocumentStyle, updateNamedStyle, insertSectionBreak, insertDate, insertPerson, insertRichLink, mergeTableCells, unmergeTableCells, formatTable, pinTableHeaderRows, replaceImage, deletePositionedObject, replaceNamedRangeContent, createFootnote, deleteHeader, deleteFooter, addDocumentTab, deleteDocTab, updateSectionStyle, readDocStructure } from './tools/docs.js';
 import { TOOLS as SHEET_TOOLS } from './tools/sheets.js';
 import { TOOLS as FORMAT_TOOLS } from './tools/sheets-format.js';
 import { TOOLS as STRUCTURE_TOOLS } from './tools/sheets-structure.js';
@@ -35,6 +35,11 @@ const DRIVE_DOC_TOOLS = [
   {
     name: 'read_doc',
     description: 'Read a Google Doc as plain text / markdown',
+    inputSchema: { type: 'object', properties: { fileId: { type: 'string', description: 'Google Doc file ID or URL' } }, required: ['fileId'] },
+  },
+  {
+    name: 'read_doc_structure',
+    description: 'Read the full structure of a Google Doc including element indices, text formatting (bold, links, colors), table structure with cell indices, image/object IDs, header/footer IDs, document style (margins, page size), and named styles. Use this to understand document layout before making edits.',
     inputSchema: { type: 'object', properties: { fileId: { type: 'string', description: 'Google Doc file ID or URL' } }, required: ['fileId'] },
   },
   {
@@ -865,6 +870,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     else if (name === 'rename_doc') result = await renameDoc(auth, args);
     else if (name === 'rename_doc_tab') result = await renameDocTab(auth, args);
     else if (name === 'read_doc') result = await readDoc(auth, args);
+    else if (name === 'read_doc_structure') result = await readDocStructure(auth, args);
     else if (name === 'edit_doc') result = await editDoc(auth, args);
     else if (name === 'rename_file') result = await renameFile(auth, args);
     else if (name === 'move_file') result = await moveFile(auth, args);

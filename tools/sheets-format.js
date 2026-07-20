@@ -245,6 +245,124 @@ export async function updateBanding(auth, { spreadsheetId, bandedRangeId, header
   return `Updated banded range (id=${bandedRangeId}).`;
 }
 
+function colLetter(idx) {
+  let s = '';
+  let i = idx;
+  while (i >= 0) { s = String.fromCharCode(65 + (i % 26)) + s; i = Math.floor(i / 26) - 1; }
+  return s;
+}
+
+function formatColor(c) {
+  if (!c) return null;
+  const parts = [];
+  if (c.red !== undefined) parts.push(`r=${Math.round(c.red * 255)}`);
+  if (c.green !== undefined) parts.push(`g=${Math.round(c.green * 255)}`);
+  if (c.blue !== undefined) parts.push(`b=${Math.round(c.blue * 255)}`);
+  if (c.alpha !== undefined) parts.push(`a=${c.alpha}`);
+  return parts.join(',');
+}
+
+function formatBorder(b) {
+  if (!b) return null;
+  const parts = [];
+  if (b.style) parts.push(b.style);
+  if (b.width) parts.push(`w=${b.width}`);
+  if (b.color) parts.push(formatColor(b.color));
+  return parts.join(' ');
+}
+
+export async function readCellFormat(auth, { spreadsheetId, range }) {
+  const id = extractId(spreadsheetId);
+  const api = sheets(auth);
+  const { sheetName } = extractSheetName(range);
+  const sheetId = await getSheetId(api, id, sheetName);
+
+  const res = await api.spreadsheets.get({
+    spreadsheetId: id,
+    ranges: [range],
+    includeGridData: true,
+    fields: 'sheets.data(startRow,startColumn,rowData.values(userEnteredFormat,dataValidation,note,userEnteredValue))',
+  });
+
+  const data = res.data.sheets?.[0]?.data?.[0];
+  if (!data || !data.rowData?.length) return 'No data in range.';
+
+  const startRow = data.startRow || 0;
+  const startCol = data.startColumn || 0;
+  const lines = [];
+
+  for (let ri = 0; ri < data.rowData.length; ri++) {
+    const row = data.rowData[ri];
+    if (!row.values) continue;
+    for (let ci = 0; ci < row.values.length; ci++) {
+      const cell = row.values[ci];
+      const fmt = cell.userEnteredFormat;
+      const dv = cell.dataValidation;
+      const note = cell.note;
+      const val = cell.userEnteredValue;
+
+      if (!fmt && !dv && !note) continue;
+
+      const cellRef = `${colLetter(startCol + ci)}${startRow + ri + 1}`;
+      const parts = [cellRef];
+
+      if (val) {
+        const v = val.stringValue || val.numberValue || val.boolValue || val.formulaValue || '';
+        parts.push(`value="${String(v).substring(0, 50)}"`);
+      }
+
+      if (fmt) {
+        if (fmt.numberFormat) parts.push(`numFmt=${fmt.numberFormat.type}${fmt.numberFormat.pattern ? '(' + fmt.numberFormat.pattern + ')' : ''}`);
+        if (fmt.backgroundColor) parts.push(`bg=${formatColor(fmt.backgroundColor)}`);
+        if (fmt.textFormat) {
+          const tf = fmt.textFormat;
+          const tParts = [];
+          if (tf.bold) tParts.push('bold');
+          if (tf.italic) tParts.push('italic');
+          if (tf.underline) tParts.push('underline');
+          if (tf.strikethrough) tParts.push('strikethrough');
+          if (tf.fontSize) tParts.push(`${tf.fontSize}pt`);
+          if (tf.fontFamily) tParts.push(tf.fontFamily);
+          if (tf.foregroundColor) tParts.push(`color=${formatColor(tf.foregroundColor)}`);
+          if (tParts.length) parts.push(`text=[${tParts.join(', ')}]`);
+        }
+        if (fmt.horizontalAlignment) parts.push(`hAlign=${fmt.horizontalAlignment}`);
+        if (fmt.verticalAlignment) parts.push(`vAlign=${fmt.verticalAlignment}`);
+        if (fmt.wrapStrategy) parts.push(`wrap=${fmt.wrapStrategy}`);
+        if (fmt.borders) {
+          const b = fmt.borders;
+          const bParts = [];
+          if (b.top) bParts.push(`top:${formatBorder(b.top)}`);
+          if (b.bottom) bParts.push(`bottom:${formatBorder(b.bottom)}`);
+          if (b.left) bParts.push(`left:${formatBorder(b.left)}`);
+          if (b.right) bParts.push(`right:${formatBorder(b.right)}`);
+          if (bParts.length) parts.push(`borders=[${bParts.join('; ')}]`);
+        }
+        if (fmt.padding) {
+          const pad = fmt.padding;
+          parts.push(`padding=${pad.top || 0},${pad.right || 0},${pad.bottom || 0},${pad.left || 0}`);
+        }
+      }
+
+      if (dv) {
+        const cond = dv.condition || {};
+        const dvParts = [cond.type || '?'];
+        if (cond.values?.length) dvParts.push(cond.values.map(v => v.userEnteredValue).join(','));
+        if (dv.strict) dvParts.push('strict');
+        if (dv.inputMessage) dvParts.push(`msg="${dv.inputMessage}"`);
+        parts.push(`validation=[${dvParts.join('; ')}]`);
+      }
+
+      if (note) parts.push(`note="${note.substring(0, 60)}"`);
+
+      lines.push(parts.join(' | '));
+    }
+  }
+
+  if (!lines.length) return 'No formatting found in range.';
+  return lines.join('\n');
+}
+
 // ── Tool definitions ──────────────────────────────────────────────────────────
 
 export const TOOLS = [
@@ -258,4 +376,5 @@ export const TOOLS = [
   { name: 'add_banding', fn: addBanding, description: 'Add alternating row color banding to a range', inputSchema: { type: 'object', properties: { spreadsheetId: { type: 'string' }, range: { type: 'string', description: 'A1 range, e.g. Sheet1!A1:D20' }, headerColor: { type: 'object', description: 'RGBA color for the header row' }, firstBandColor: { type: 'object', description: 'RGBA color for odd rows' }, secondBandColor: { type: 'object', description: 'RGBA color for even rows' }, footerColor: { type: 'object', description: 'RGBA color for the footer row' } }, required: ['spreadsheetId', 'range'] } },
   { name: 'delete_banding', fn: deleteBanding, description: 'Delete a banded range by its ID', inputSchema: { type: 'object', properties: { spreadsheetId: { type: 'string' }, bandedRangeId: { type: 'number', description: 'Banded range ID (from get_sheet_metadata)' } }, required: ['spreadsheetId', 'bandedRangeId'] } },
   { name: 'update_banding', fn: updateBanding, description: 'Update colors on an existing banded range', inputSchema: { type: 'object', properties: { spreadsheetId: { type: 'string' }, bandedRangeId: { type: 'number', description: 'Banded range ID' }, headerColor: { type: 'object', description: 'RGBA color for the header row' }, firstBandColor: { type: 'object', description: 'RGBA color for odd rows' }, secondBandColor: { type: 'object', description: 'RGBA color for even rows' }, footerColor: { type: 'object', description: 'RGBA color for the footer row' } }, required: ['spreadsheetId', 'bandedRangeId'] } },
+  { name: 'read_cell_format', fn: readCellFormat, description: 'Read cell formatting, data validation, and notes from a range. Returns format details per cell (colors, fonts, borders, number formats, validation rules, notes).', inputSchema: { type: 'object', properties: { spreadsheetId: { type: 'string' }, range: { type: 'string', description: 'A1 range, e.g. Sheet1!A1:D10' } }, required: ['spreadsheetId', 'range'] } },
 ];
