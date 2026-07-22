@@ -198,12 +198,14 @@ export async function createPermission(auth, { fileId, role, type, emailAddress,
   const requestBody = { role, type };
   if (emailAddress) requestBody.emailAddress = emailAddress;
   if (domain) requestBody.domain = domain;
-  const res = await drive.permissions.create({
+  const params = {
     fileId: id,
     requestBody,
     sendNotificationEmail,
     fields: 'id,type,role,emailAddress,domain',
-  });
+  };
+  if (role === 'owner') params.transferOwnership = true;
+  const res = await drive.permissions.create(params);
   const p = res.data;
   return `Permission created (ID: ${p.id}): ${p.role} for ${p.emailAddress || p.domain || p.type}`;
 }
