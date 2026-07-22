@@ -12,27 +12,32 @@ export async function formatCells(auth, { spreadsheetId, range, format }) {
   const gridRange = parseRange(cleanRange, sheetId);
 
   const cellFormat = {};
-  if (format.backgroundColor) cellFormat.backgroundColor = format.backgroundColor;
+  const fieldPaths = [];
+
+  if (format.backgroundColor) {
+    cellFormat.backgroundColor = format.backgroundColor;
+    fieldPaths.push('userEnteredFormat.backgroundColor');
+  }
   if (format.textFormat) {
     cellFormat.textFormat = {};
     const tf = format.textFormat;
-    if (tf.foregroundColor !== undefined) cellFormat.textFormat.foregroundColor = tf.foregroundColor;
-    if (tf.fontFamily !== undefined) cellFormat.textFormat.fontFamily = tf.fontFamily;
-    if (tf.fontSize !== undefined) cellFormat.textFormat.fontSize = tf.fontSize;
-    if (tf.bold !== undefined) cellFormat.textFormat.bold = tf.bold;
-    if (tf.italic !== undefined) cellFormat.textFormat.italic = tf.italic;
-    if (tf.strikethrough !== undefined) cellFormat.textFormat.strikethrough = tf.strikethrough;
-    if (tf.underline !== undefined) cellFormat.textFormat.underline = tf.underline;
+    if (tf.foregroundColor !== undefined) { cellFormat.textFormat.foregroundColor = tf.foregroundColor; fieldPaths.push('userEnteredFormat.textFormat.foregroundColor'); }
+    if (tf.fontFamily !== undefined) { cellFormat.textFormat.fontFamily = tf.fontFamily; fieldPaths.push('userEnteredFormat.textFormat.fontFamily'); }
+    if (tf.fontSize !== undefined) { cellFormat.textFormat.fontSize = tf.fontSize; fieldPaths.push('userEnteredFormat.textFormat.fontSize'); }
+    if (tf.bold !== undefined) { cellFormat.textFormat.bold = tf.bold; fieldPaths.push('userEnteredFormat.textFormat.bold'); }
+    if (tf.italic !== undefined) { cellFormat.textFormat.italic = tf.italic; fieldPaths.push('userEnteredFormat.textFormat.italic'); }
+    if (tf.strikethrough !== undefined) { cellFormat.textFormat.strikethrough = tf.strikethrough; fieldPaths.push('userEnteredFormat.textFormat.strikethrough'); }
+    if (tf.underline !== undefined) { cellFormat.textFormat.underline = tf.underline; fieldPaths.push('userEnteredFormat.textFormat.underline'); }
   }
-  if (format.horizontalAlignment) cellFormat.horizontalAlignment = format.horizontalAlignment;
-  if (format.verticalAlignment) cellFormat.verticalAlignment = format.verticalAlignment;
-  if (format.wrapStrategy) cellFormat.wrapStrategy = format.wrapStrategy;
-  if (format.numberFormat) cellFormat.numberFormat = format.numberFormat;
-  if (format.padding) cellFormat.padding = format.padding;
+  if (format.horizontalAlignment) { cellFormat.horizontalAlignment = format.horizontalAlignment; fieldPaths.push('userEnteredFormat.horizontalAlignment'); }
+  if (format.verticalAlignment) { cellFormat.verticalAlignment = format.verticalAlignment; fieldPaths.push('userEnteredFormat.verticalAlignment'); }
+  if (format.wrapStrategy) { cellFormat.wrapStrategy = format.wrapStrategy; fieldPaths.push('userEnteredFormat.wrapStrategy'); }
+  if (format.numberFormat) { cellFormat.numberFormat = format.numberFormat; fieldPaths.push('userEnteredFormat.numberFormat'); }
+  if (format.padding) { cellFormat.padding = format.padding; fieldPaths.push('userEnteredFormat.padding'); }
 
   await api.spreadsheets.batchUpdate({
     spreadsheetId: id,
-    requestBody: { requests: [{ repeatCell: { range: gridRange, cell: { userEnteredFormat: cellFormat }, fields: 'userEnteredFormat' } }] },
+    requestBody: { requests: [{ repeatCell: { range: gridRange, cell: { userEnteredFormat: cellFormat }, fields: fieldPaths.join(',') } }] },
   });
   return `Formatted cells in ${range}.`;
 }
